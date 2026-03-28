@@ -1,46 +1,63 @@
 "use client";
 
+import { useState, useEffect } from "react";
+
 interface NeuralPredictProps {
   metrics: { cpu: number; ram: number };
   prediction: any;
 }
 
 export default function NeuralPredict({ metrics, prediction }: NeuralPredictProps) {
-  // On récupère le verdict de l'IA passé par le Dashboard
+  const [isMounted, setIsMounted] = useState(false);
+  const [anomalyRisk, setAnomalyRisk] = useState(0);
+
   const isAnomaly = prediction?.is_anomaly || false;
-  
-  // On calcule un score visuel (si anomalie, on simule un risque haut, sinon bas)
-  const anomalyRisk = isAnomaly 
-    ? Math.floor(Math.random() * 20) + 80 
-    : Math.floor(Math.random() * 30);
+
+  // 1. On s'assure que le composant est monté côté client
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // 2. On calcule le risque seulement quand on est sur le client
+  useEffect(() => {
+    if (isMounted) {
+      const risk = isAnomaly 
+        ? Math.floor(Math.random() * 20) + 80 
+        : Math.floor(Math.random() * 30);
+      setAnomalyRisk(risk);
+    }
+  }, [isAnomaly, prediction, isMounted]);
+
+  // Si on n'est pas encore monté, on affiche une version "squelette" ou fixe
+  // pour éviter tout décalage entre Serveur et Client
+  const displayRisk = isMounted ? anomalyRisk : 0;
+  const displayCpu = isMounted ? metrics.cpu : 0;
+  const displayRam = isMounted ? metrics.ram : 0;
 
   const risks = [
     { 
       label: "CPU Utilization", 
-      value: metrics.cpu, 
-      color: metrics.cpu > 80 ? "#eab308" : "var(--primary)", 
-      note: "Live processor load", 
-      bold: metrics.cpu > 80 
+      value: displayCpu, 
+      color: displayCpu > 80 ? "#eab308" : "var(--primary)", 
+      note: "Live processor load" 
     },
     { 
       label: "RAM Consumption", 
-      value: metrics.ram, 
-      color: metrics.ram > 85 ? "#eab308" : "var(--primary)", 
-      note: "Physical memory allocation", 
-      bold: metrics.ram > 85 
+      value: displayRam, 
+      color: displayRam > 85 ? "#eab308" : "var(--primary)", 
+      note: "Physical memory allocation" 
     },
     { 
       label: "AI Anomaly Score", 
-      value: anomalyRisk, 
+      value: displayRisk, 
       color: isAnomaly ? "var(--error)" : "#22c55e", 
       note: isAnomaly ? "CRITICAL: Pattern mismatch!" : "Predictive engine: Normal", 
       bold: isAnomaly 
     },
   ];
 
-  // Le graphique du bas réagit maintenant aux deux métriques en alternance
   const bars = Array.from({ length: 10 }).map((_, i) => ({
-    h: Math.max(15, i % 2 === 0 ? metrics.cpu : metrics.ram),
+    h: isMounted ? Math.max(15, i % 2 === 0 ? metrics.cpu : metrics.ram) : 15,
     color: isAnomaly ? "rgba(186, 26, 26, 0.4)" : "rgba(0,102,112,0.2)"
   }));
 
@@ -56,7 +73,6 @@ export default function NeuralPredict({ metrics, prediction }: NeuralPredictProp
         </span>
       </header>
 
-      {/* Cartes de Risques */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
         {risks.map(({ label, value, color, note, bold }) => (
           <div key={label} style={{ background: "var(--surface-container-lowest)", padding: 20, borderRadius: 8, borderBottom: `2px solid ${color}`, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", transition: "all 0.4s ease" }}>
@@ -76,7 +92,6 @@ export default function NeuralPredict({ metrics, prediction }: NeuralPredictProp
         ))}
       </div>
 
-      {/* Flux Graphique */}
       <div style={{ height: 160, background: "var(--surface-container-highest)", borderRadius: 8, position: "relative", overflow: "hidden", display: "flex", alignItems: "flex-end", padding: "0 12px", gap: 4 }}>
         <div style={{ position: "absolute", inset: 0, padding: 12, display: "flex", justifyContent: "space-between", pointerEvents: "none" }}>
           <span style={{ fontSize: 9, fontFamily: "var(--font-label)", color: "rgba(61,73,75,0.4)", fontWeight: 700 }}>AI ANALYTICS FEED</span>
