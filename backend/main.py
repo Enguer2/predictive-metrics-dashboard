@@ -1,11 +1,20 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
 import numpy as np
 
+# Chargement du modèle entraîné
 model = joblib.load('model.pkl')
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class Metrics(BaseModel):
     cpu_usage: float
@@ -19,7 +28,7 @@ def home():
 def predict(metrics: Metrics):
     data = np.array([[metrics.cpu_usage, metrics.ram_usage]])
     
-    # AI return : (-1 = Anomalie, 1 = Normal)
+    # Verdict de l'IA : (-1 = Anomalie, 1 = Normal)
     prediction = model.predict(data)
     
     return {
