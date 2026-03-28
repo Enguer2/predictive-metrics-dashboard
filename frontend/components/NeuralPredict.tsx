@@ -1,23 +1,54 @@
-export default function NeuralPredict() {
+"use client";
+
+interface NeuralPredictProps {
+  metrics: { cpu: number; ram: number };
+  prediction: any;
+}
+
+export default function NeuralPredict({ metrics, prediction }: NeuralPredictProps) {
+  // On récupère le verdict de l'IA passé par le Dashboard
+  const isAnomaly = prediction?.is_anomaly || false;
+  
+  // On calcule un score visuel (si anomalie, on simule un risque haut, sinon bas)
+  const anomalyRisk = isAnomaly 
+    ? Math.floor(Math.random() * 20) + 80 
+    : Math.floor(Math.random() * 30);
+
   const risks = [
-    { label: "Memory Leak", value: 12, color: "var(--primary)", note: "Nominal variance detected in slab allocation.", bold: false },
-    { label: "Latency Degradation", value: 42, color: "#eab308", note: "Probability spike in packet re-transmission at 04:00Z.", bold: false },
-    { label: "Thermal Variance", value: 89, color: "var(--error)", note: "Critical: Predicted thermal throttling in T-minus 12min.", bold: true },
+    { 
+      label: "CPU Utilization", 
+      value: metrics.cpu, 
+      color: metrics.cpu > 80 ? "#eab308" : "var(--primary)", 
+      note: "Live processor load", 
+      bold: metrics.cpu > 80 
+    },
+    { 
+      label: "RAM Consumption", 
+      value: metrics.ram, 
+      color: metrics.ram > 85 ? "#eab308" : "var(--primary)", 
+      note: "Physical memory allocation", 
+      bold: metrics.ram > 85 
+    },
+    { 
+      label: "AI Anomaly Score", 
+      value: anomalyRisk, 
+      color: isAnomaly ? "var(--error)" : "#22c55e", 
+      note: isAnomaly ? "CRITICAL: Pattern mismatch!" : "Predictive engine: Normal", 
+      bold: isAnomaly 
+    },
   ];
 
-  const bars = [
-    { h: 30, color: "rgba(0,102,112,0.2)" }, { h: 45, color: "rgba(0,102,112,0.3)" },
-    { h: 40, color: "rgba(0,102,112,0.25)" }, { h: 60, color: "rgba(0,102,112,0.4)" },
-    { h: 85, color: "rgba(0,102,112,0.6)" }, { h: 70, color: "rgba(234,179,8,0.4)" },
-    { h: 95, color: "rgba(186,26,26,0.5)" }, { h: 100, color: "rgba(186,26,26,0.7)" },
-    { h: 80, color: "rgba(186,26,26,0.4)" }, { h: 40, color: "rgba(0,102,112,0.2)" },
-  ];
+  // Le graphique du bas réagit maintenant aux deux métriques en alternance
+  const bars = Array.from({ length: 10 }).map((_, i) => ({
+    h: Math.max(15, i % 2 === 0 ? metrics.cpu : metrics.ram),
+    color: isAnomaly ? "rgba(186, 26, 26, 0.4)" : "rgba(0,102,112,0.2)"
+  }));
 
   return (
     <div style={{ background: "var(--surface-container-low)", borderRadius: 12, padding: 24, display: "flex", flexDirection: "column", gap: 24 }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(188,201,203,0.2)", paddingBottom: 16 }}>
         <h2 style={{ fontFamily: "var(--font-headline)", fontSize: 20, fontWeight: 600, display: "flex", alignItems: "center", gap: 8, margin: 0 }}>
-          <span className="material-symbols-outlined" style={{ color: "var(--primary)" }}>psychology</span>
+          <span className="material-symbols-outlined" style={{ color: isAnomaly ? "var(--error)" : "var(--primary)" }}>psychology</span>
           Neural Incident Prediction
         </h2>
         <span style={{ fontSize: 10, fontFamily: "var(--font-label)", fontWeight: 700, color: "var(--on-surface-variant)", padding: "4px 8px", background: "var(--surface-container-highest)", borderRadius: 9999 }}>
@@ -25,19 +56,19 @@ export default function NeuralPredict() {
         </span>
       </header>
 
-      {/* Risk Cards */}
+      {/* Cartes de Risques */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
         {risks.map(({ label, value, color, note, bold }) => (
-          <div key={label} style={{ background: "var(--surface-container-lowest)", padding: 20, borderRadius: 8, borderBottom: `2px solid ${color}`, boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+          <div key={label} style={{ background: "var(--surface-container-lowest)", padding: 20, borderRadius: 8, borderBottom: `2px solid ${color}`, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", transition: "all 0.4s ease" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <span style={{ fontFamily: "var(--font-label)", fontSize: 12, fontWeight: 700, color: "var(--on-surface-variant)" }}>{label}</span>
-              <span style={{ color, fontWeight: 700, fontFamily: "var(--font-headline)", fontSize: 18 }}>{value}%</span>
+              <span style={{ fontFamily: "var(--font-label)", fontSize: 11, fontWeight: 700, color: "var(--on-surface-variant)", textTransform: "uppercase" }}>{label}</span>
+              <span style={{ color, fontWeight: 700, fontFamily: "var(--font-headline)", fontSize: 20 }}>{value}%</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ height: 4, width: "100%", background: "var(--surface-container-high)", borderRadius: 9999, overflow: "hidden" }}>
-                <div style={{ background: color, width: `${value}%`, height: "100%", transition: "width 0.8s ease" }} />
+                <div style={{ background: color, width: `${value}%`, height: "100%", transition: "width 0.6s ease" }} />
               </div>
-              <p style={{ fontSize: 10, fontFamily: "var(--font-label)", color: bold ? color : "var(--on-surface-variant)", opacity: bold ? 1 : 0.7, fontStyle: "italic", fontWeight: bold ? 700 : 400, margin: 0 }}>
+              <p style={{ fontSize: 10, color: bold ? color : "var(--on-surface-variant)", fontWeight: bold ? 700 : 400, margin: 0 }}>
                 {note}
               </p>
             </div>
@@ -45,14 +76,16 @@ export default function NeuralPredict() {
         ))}
       </div>
 
-      {/* Chart */}
-      <div style={{ height: 192, background: "var(--surface-container-highest)", borderRadius: 8, position: "relative", overflow: "hidden", display: "flex", alignItems: "flex-end", padding: "0 16px", gap: 4 }}>
-        <div style={{ position: "absolute", inset: 0, padding: 16, display: "flex", justifyContent: "space-between", pointerEvents: "none" }}>
-          <span style={{ fontSize: 9, fontFamily: "var(--font-label)", color: "rgba(61,73,75,0.4)" }}>ANALYTICS TREND (24H)</span>
-          <span style={{ fontSize: 9, fontFamily: "var(--font-label)", color: "rgba(61,73,75,0.4)" }}>98.4% ACCURACY</span>
+      {/* Flux Graphique */}
+      <div style={{ height: 160, background: "var(--surface-container-highest)", borderRadius: 8, position: "relative", overflow: "hidden", display: "flex", alignItems: "flex-end", padding: "0 12px", gap: 4 }}>
+        <div style={{ position: "absolute", inset: 0, padding: 12, display: "flex", justifyContent: "space-between", pointerEvents: "none" }}>
+          <span style={{ fontSize: 9, fontFamily: "var(--font-label)", color: "rgba(61,73,75,0.4)", fontWeight: 700 }}>AI ANALYTICS FEED</span>
+          <span style={{ fontSize: 9, fontFamily: "var(--font-label)", color: isAnomaly ? "var(--error)" : "#22c55e", fontWeight: 700 }}>
+            {isAnomaly ? "PATTERN ANOMALY DETECTED" : "SYSTEM OPERATIONAL"}
+          </span>
         </div>
         {bars.map((bar, i) => (
-          <div key={i} style={{ flex: 1, background: bar.color, height: `${bar.h}%`, borderRadius: "4px 4px 0 0" }} />
+          <div key={i} style={{ flex: 1, background: bar.color, height: `${bar.h}%`, borderRadius: "2px 2px 0 0", transition: "height 0.4s ease, background 0.4s ease" }} />
         ))}
       </div>
     </div>
