@@ -2,20 +2,30 @@
 
 import { useEffect, useRef, useState } from "react";
 
+interface LogEntry {
+  ts: string;
+  level: string;
+  levelColor: string;
+  msg: string;
+  color: string;
+  bold?: boolean;
+}
+
 interface KernelLogsProps {
   prediction: any;
 }
 
 export default function KernelLogs({ prediction }: KernelLogsProps) {
   const logRef = useRef<HTMLDivElement>(null);
-  const [logs, setLogs] = useState([
-    { ts: "09:22:01", level: "INFO", levelColor: "#34d399", msg: "sys_kernel: Node CLUSTER_01 heartbeat acknowledged.", color: "#94a3b8" },
-    { ts: "09:22:04", level: "INFO", levelColor: "#34d399", msg: "neural_engine: Initializing Isolation Forest weights...", color: "#94a3b8" },
+  
+  const [logs, setLogs] = useState<LogEntry[]>([
+    { ts: "09:22:01", level: "INFO", levelColor: "#34d399", msg: "sys_kernel: Node CLUSTER_01 heartbeat acknowledged.", color: "#94a3b8", bold: false },
+    { ts: "09:22:04", level: "INFO", levelColor: "#34d399", msg: "neural_engine: Initializing Isolation Forest weights...", color: "#94a3b8", bold: false },
   ]);
 
   useEffect(() => {
     if (prediction) {
-      const newLog = {
+      const newLog: LogEntry = {
         ts: prediction.timestamp,
         level: prediction.is_anomaly ? "CRIT" : "IA_OPS",
         levelColor: prediction.is_anomaly ? "#ef4444" : "#60a5fa",
@@ -26,7 +36,6 @@ export default function KernelLogs({ prediction }: KernelLogsProps) {
         bold: prediction.is_anomaly
       };
 
-      // On garde les 15 derniers logs pour ne pas ralentir le navigateur
       setLogs(prev => [...prev.slice(-14), newLog]);
     }
   }, [prediction]);

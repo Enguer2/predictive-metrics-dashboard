@@ -3,12 +3,12 @@ version: '3.8'
 services:
   db:
     image: postgres:15
-    container_name: sentinel-db
+    container_name: dashboard-db
     restart: always
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: sentinel_ops
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -17,12 +17,13 @@ services:
   backend:
     build: ./backend
     container_name: dashboard-api
+    restart: on-failure
     ports:
       - "8000:8000"
     depends_on:
       - db
     environment:
-      DATABASE_URL: postgresql://user:password@db:5432/sentinel_ops
+      DATABASE_URL: ${DATABASE_URL}
 
   frontend:
     build: ./frontend
