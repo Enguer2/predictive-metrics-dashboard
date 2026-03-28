@@ -30,3 +30,13 @@ export async function getAiPrediction(cpu: number, ram: number) {
     return null;
   }
 }
+
+export async function getLiveSystemStats() {
+  try {
+    const response = await fetch("http://localhost:8000/stats");
+    return await response.json();
+  } catch (error) {
+    console.error("Erreur lecture stats:", error);
+    return null;
+  }
+}

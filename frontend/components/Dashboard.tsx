@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { checkBackendStatus, getAiPrediction } from "@/lib/api";
+// Suppression de getAiPrediction (inutile ici) et ajout de getLiveSystemStats
+import { checkBackendStatus, getLiveSystemStats } from "@/lib/api"; 
 import NeuralPredict from "./NeuralPredict";
 import KernelLogs from "./KernelLogs";
 import NodeMap from "./NodeMap";
@@ -21,22 +22,27 @@ export default function Dashboard() {
     verifyConnection();
   }, []);
 
-  // 2. Boucle de monitoring principale (toutes les 3 secondes)
+  // 2. Boucle de monitoring réelle
   useEffect(() => {
     if (apiStatus !== "online") return;
 
-    const runInference = async () => {
-      const cpu = Math.floor(Math.random() * 100);
-      const ram = Math.floor(Math.random() * 100);
-      setMetrics({ cpu, ram });
-
-      const prediction = await getAiPrediction(cpu, ram);
-      if (prediction) {
-        setLastPrediction({ ...prediction, cpu, ram, timestamp: new Date().toLocaleTimeString() });
+    const fetchRealStats = async () => {
+      const data = await getLiveSystemStats();
+      
+      if (data) {
+        setMetrics({ cpu: data.cpu, ram: data.ram });
+        setLastPrediction({ 
+          is_anomaly: data.is_anomaly, 
+          cpu: data.cpu, 
+          ram: data.ram, 
+          // On ajoute l'heure locale pour les logs
+          timestamp: new Date().toLocaleTimeString() 
+        });
       }
     };
 
-    const interval = setInterval(runInference, 3000);
+    // On réduit l'intervalle à 2s pour plus de réactivité sur les vraies stats
+    const interval = setInterval(fetchRealStats, 2000); 
     return () => clearInterval(interval);
   }, [apiStatus]);
 
