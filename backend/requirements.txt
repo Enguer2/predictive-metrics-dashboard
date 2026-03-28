@@ -4,3 +4,6 @@ pandas
 scikit-learn
 numpy
 joblib
+psutil
+psycopg2-binary
+sqlalchemy

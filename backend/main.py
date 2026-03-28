@@ -1,37 +1,56 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+import psutil
 import joblib
 import numpy as np
+import os
+from sqlalchemy import create_engine, Column, Float, Boolean, Integer, String, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+import datetime
 
-# Chargement du modèle entraîné
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@db:5432/sentinel_ops")
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Modèle de la table
+class MetricLog(Base):
+    __tablename__ = "metrics_history"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    cpu = Column(Float)
+    ram = Column(Float)
+    is_anomaly = Column(Boolean)
+
+# Création de la table au démarrage
+Base.metadata.create_all(bind=engine)
+
+# --- APP FASTAPI ---
+app = FastAPI()
 model = joblib.load('model.pkl')
 
-app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
+    allow_origins=["*"], # En local on peut être large
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class Metrics(BaseModel):
-    cpu_usage: float
-    ram_usage: float
-
-@app.get("/")
-def home():
-    return {"status": "online", "message": "Sentinel AI-Ops API is ready"}
-
-@app.post("/predict")
-def predict(metrics: Metrics):
-    data = np.array([[metrics.cpu_usage, metrics.ram_usage]])
+@app.get("/stats")
+def get_stats():
+    cpu = psutil.cpu_percent(interval=None)
+    ram = psutil.virtual_memory().percent
     
-    # Verdict de l'IA : (-1 = Anomalie, 1 = Normal)
+    data = np.array([[cpu, ram]])
     prediction = model.predict(data)
+    is_anomaly = bool(prediction[0] == -1)
     
-    return {
-        "is_anomaly": bool(prediction[0] == -1),
-        "prediction_code": int(prediction[0])
-    }
+    # SAUVEGARDE DANS LA DB
+    db = SessionLocal()
+    new_log = MetricLog(cpu=cpu, ram=ram, is_anomaly=is_anomaly)
+    db.add(new_log)
+    db.commit()
+    db.close()
+    
+    return {"cpu": cpu, "ram": ram, "is_anomaly": is_anomaly}
