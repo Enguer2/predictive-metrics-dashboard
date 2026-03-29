@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-// Suppression de getAiPrediction (inutile ici) et ajout de getLiveSystemStats
-import { checkBackendStatus, getLiveSystemStats } from "@/lib/api"; 
+// Assure-toi que getHistory et getLiveSystemStats sont mis à jour dans api.ts pour retourner 'network'
+import { checkBackendStatus, getLiveSystemStats, getHistory } from "@/lib/api"; 
 import NeuralPredict from "./NeuralPredict";
 import KernelLogs from "./KernelLogs";
 import NodeMap from "./NodeMap";
@@ -11,18 +11,34 @@ import Telemetry from "./Telemetry";
 export default function Dashboard() {
   const [apiStatus, setApiStatus] = useState<"connecting" | "online" | "offline">("connecting");
   const [lastPrediction, setLastPrediction] = useState<any>(null);
-  const [metrics, setMetrics] = useState({ cpu: 0, ram: 0 });
+  // ÉTAPE 1 : On ajoute 'network' dans le state initial
+  const [metrics, setMetrics] = useState({ cpu: 0, ram: 0, network: 0 }); 
+  const [history, setHistory] = useState<any[]>([]);
 
-  // 1. Vérification de la connexion au démarrage
+  // 1. Vérification de la connexion ET chargement de l'historique au démarrage
   useEffect(() => {
-    async function verifyConnection() {
-      const data = await checkBackendStatus();
-      setApiStatus(data.status === "online" ? "online" : "offline");
+    async function initDashboard() {
+      const statusData = await checkBackendStatus();
+      
+      if (statusData.status === "online") {
+        setApiStatus("online");
+        const historicalData = await getHistory();
+        if (historicalData) {
+          setHistory(historicalData);
+          const lastEntry = historicalData[historicalData.length - 1];
+          if (lastEntry) {
+            // ÉTAPE 2 : On initialise avec network si dispo
+            setMetrics({ cpu: lastEntry.cpu, ram: lastEntry.ram, network: lastEntry.network || 0 }); 
+          }
+        }
+      } else {
+        setApiStatus("offline");
+      }
     }
-    verifyConnection();
+    initDashboard();
   }, []);
 
-  // 2. Boucle de monitoring réelle
+  // 2. Boucle de monitoring temps réel (Direct)
   useEffect(() => {
     if (apiStatus !== "online") return;
 
@@ -30,18 +46,26 @@ export default function Dashboard() {
       const data = await getLiveSystemStats();
       
       if (data) {
-        setMetrics({ cpu: data.cpu, ram: data.ram });
+        // ÉTAPE 3 : On met à jour le state metrics avec la donnée réseau reçue de l'API
+        setMetrics({ cpu: data.cpu, ram: data.ram, network: data.network || 0 }); 
         setLastPrediction({ 
           is_anomaly: data.is_anomaly, 
           cpu: data.cpu, 
           ram: data.ram, 
-          // On ajoute l'heure locale pour les logs
           timestamp: new Date().toLocaleTimeString() 
         });
+
+        // On garde les 50 derniers points dans l'historique
+        setHistory(prev => [...prev.slice(-49), {
+          cpu: data.cpu,
+          ram: data.ram,
+          network: data.network || 0, // Ajout dans l'historique visuel
+          is_anomaly: data.is_anomaly,
+          timestamp: new Date().toLocaleTimeString()
+        }]);
       }
     };
 
-    // On réduit l'intervalle à 2s pour plus de réactivité sur les vraies stats
     const interval = setInterval(fetchRealStats, 2000); 
     return () => clearInterval(interval);
   }, [apiStatus]);
@@ -73,8 +97,8 @@ export default function Dashboard() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 24 }}>
         <section style={{ gridColumn: "span 8", display: "flex", flexDirection: "column", gap: 24 }}>
-          {/* On passe les données en PROPS aux composants */}
-          <NeuralPredict metrics={metrics} prediction={lastPrediction} />
+          {/* L'orchestrateur passe les nouvelles metrics complètes au composant visuel */}
+          <NeuralPredict metrics={metrics} prediction={lastPrediction} history={history} />
           <KernelLogs prediction={lastPrediction} />
         </section>
 

@@ -40,3 +40,13 @@ export async function getLiveSystemStats() {
     return null;
   }
 }
+
+export async function getHistory() {
+  try {
+    const response = await fetch("http://localhost:8000/history");
+    return await response.json();
+  } catch (error) {
+    console.error("Erreur history:", error);
+    return [];
+  }
+}

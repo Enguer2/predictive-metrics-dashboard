@@ -25,21 +25,22 @@ export default function KernelLogs({ prediction }: KernelLogsProps) {
 
   useEffect(() => {
     if (prediction) {
+      const inferenceLabel = prediction.is_anomaly ? "Anomaly" : "Normal";
+      
       const newLog: LogEntry = {
-        ts: prediction.timestamp,
+        ts: prediction.timestamp || new Date().toLocaleTimeString(),
         level: prediction.is_anomaly ? "CRIT" : "IA_OPS",
         levelColor: prediction.is_anomaly ? "#ef4444" : "#60a5fa",
         msg: prediction.is_anomaly 
-          ? `ANOMALY DETECTED: Pattern mismatch at CPU ${prediction.cpu}% / RAM ${prediction.ram}%`
-          : `Pattern analysis: System state nominal (Inference: ${prediction.prediction_code})`,
-        color: prediction.is_anomaly ? "#f1f5f9" : "#94a3b8",
+          ? ` ANOMALY DETECTED: Pattern mismatch at CPU ${prediction.cpu}% / RAM ${prediction.ram}%`
+          : ` Pattern analysis: System state nominal (Inference: ${inferenceLabel})`, 
+        color: "#94a3b8",
         bold: prediction.is_anomaly
       };
 
-      setLogs(prev => [...prev.slice(-14), newLog]);
+      setLogs(prev => [...prev.slice(-10), newLog]);
     }
   }, [prediction]);
-
   useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
