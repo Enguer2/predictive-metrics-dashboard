@@ -78,10 +78,11 @@ try:
     model        = joblib.load('model.pkl')
     scaler       = joblib.load('scaler.pkl')
     FEATURE_COLS = joblib.load('feature_cols.pkl')
+    THRESHOLDS   = joblib.load('thresholds.pkl')
     print(f"✅ IA chargée — features : {FEATURE_COLS}")
 except Exception as e:
     print(f"❌ Erreur chargement IA : {e}")
-    model, scaler, FEATURE_COLS = None, None, None
+    model, scaler, FEATURE_COLS, THRESHOLDS = None, None, None, None
 
 # ─────────────────────────────────────────────
 # SLIDING WINDOW — keeps last N readings for
@@ -90,10 +91,19 @@ except Exception as e:
 WINDOW_SIZE = 5
 _window: deque = deque(maxlen=WINDOW_SIZE)   # stores (cpu, ram, network) tuples
 
+CPU_DANGER   = 85.0
+RAM_DANGER   = 85.0
+RAM_CRITICAL = 95.0
+
 def compute_features(cpu: float, ram: float, network: float) -> dict:
     """
     Build the same enriched feature vector that was used during training,
     using the sliding window to compute rate-of-change deltas.
+
+    Must stay perfectly in sync with build_features() in train_model.py.
+    Features (11): cpu, ram, network, cpu_delta, ram_delta, net_delta,
+                   cpu_pressure, ram_pressure, ram_critical,
+                   combined_load, cpu_ram_ratio
     """
     _window.append((cpu, ram, network))
 
@@ -105,7 +115,13 @@ def compute_features(cpu: float, ram: float, network: float) -> dict:
     else:
         cpu_delta = ram_delta = net_delta = 0.0
 
-    combined_load = cpu * 0.50 + ram * 0.40 + network * 0.10
+    # [C] Saturation features — identical to train_model.py
+    cpu_pressure = max(0.0, cpu - CPU_DANGER)
+    ram_pressure = max(0.0, ram - RAM_DANGER)
+    ram_critical = max(0.0, ram - RAM_CRITICAL)
+
+    # Weighted global load — weights must match train_model.py (0.45 / 0.45 / 0.10)
+    combined_load = cpu * 0.45 + ram * 0.45 + network * 0.10
     cpu_ram_ratio = cpu / (ram + 1e-6)
 
     return {
@@ -115,6 +131,9 @@ def compute_features(cpu: float, ram: float, network: float) -> dict:
         "cpu_delta":     cpu_delta,
         "ram_delta":     ram_delta,
         "net_delta":     net_delta,
+        "cpu_pressure":  cpu_pressure,
+        "ram_pressure":  ram_pressure,
+        "ram_critical":  ram_critical,
         "combined_load": combined_load,
         "cpu_ram_ratio": cpu_ram_ratio,
     }

@@ -49,19 +49,23 @@ export default function Dashboard() {
         // ÉTAPE 3 : On met à jour le state metrics avec la donnée réseau reçue de l'API
         setMetrics({ cpu: data.cpu, ram: data.ram, network: data.network || 0 }); 
         setLastPrediction({ 
-          is_anomaly: data.is_anomaly, 
-          cpu: data.cpu, 
-          ram: data.ram, 
-          timestamp: new Date().toLocaleTimeString() 
+          is_anomaly:    data.is_anomaly, 
+          ai_risk_score: data.ai_risk_score,   // ← manquait
+          alert_level:   data.alert_level,     // ← manquait
+          cpu:           data.cpu, 
+          ram:           data.ram, 
+          timestamp:     new Date().toLocaleTimeString() 
         });
 
         // On garde les 50 derniers points dans l'historique
         setHistory(prev => [...prev.slice(-49), {
-          cpu: data.cpu,
-          ram: data.ram,
-          network: data.network || 0, // Ajout dans l'historique visuel
-          is_anomaly: data.is_anomaly,
-          timestamp: new Date().toLocaleTimeString()
+          cpu:           data.cpu,
+          ram:           data.ram,
+          network:       data.network || 0,
+          is_anomaly:    data.is_anomaly,
+          ai_risk_score: data.ai_risk_score,   // ← manquait
+          alert_level:   data.alert_level,     // ← manquait
+          timestamp:     new Date().toLocaleTimeString()
         }]);
       }
     };
