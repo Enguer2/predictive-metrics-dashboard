@@ -27,12 +27,35 @@ export default function NodeMap({ activeNode, onSelectNode }: NodeMapProps) {
     return () => clearInterval(id);
   }, []);
 
-  // Map lat/lon → SVG pixel space (simple Mercator-ish projection)
-  // SVG viewport: 300 × 220
-  const project = (lat: number, lon: number) => ({
-    x: ((lon + 180) / 360) * 300,
-    y: ((90 - lat) / 180) * 220,
-  });
+  // ── 1. GESTION DES POSITIONS (Anti-Superposition) ──
+  const getProjectedNodes = () => {
+    return nodes.map((node, index) => {
+      // Si c'est un noeud physique avec de vraies coordonnées
+      if (node.lat !== 0 || node.lon !== 0) {
+        return {
+          ...node,
+          x: ((node.lon + 180) / 360) * 300,
+          y: ((90 - node.lat) / 180) * 220,
+        };
+      }
+      
+      const centerX = 150;
+      const centerY = 110;
+      
+      // Calcul d'un angle unique basé sur sa position dans la liste
+      const angle = (index / nodes.length) * Math.PI * 2;
+      // Rayon variable pour éviter un cercle parfait et donner un effet "nuage/toile"
+      const radius = 45 + (index % 4) * 15; 
+      
+      return {
+        ...node,
+        x: centerX + Math.cos(angle) * radius,
+        y: centerY + Math.sin(angle) * radius,
+      };
+    });
+  };
+
+  const projectedNodes = getProjectedNodes();
 
   return (
     <div style={{
@@ -66,7 +89,6 @@ export default function NodeMap({ activeNode, onSelectNode }: NodeMapProps) {
 
       {/* Map */}
       <div style={{ flex: 1, position: "relative", background: "#0c3547", overflow: "hidden" }}>
-        {/* Gradient overlay */}
         <div style={{
           position: "absolute", inset: 0,
           background: "linear-gradient(135deg, #0f4c81 0%, #1e6091 30%, #134874 60%, #0c3547 100%)",
@@ -77,20 +99,37 @@ export default function NodeMap({ activeNode, onSelectNode }: NodeMapProps) {
           backgroundImage: "radial-gradient(circle at 30% 50%, rgba(6,182,212,0.15) 0%, transparent 60%), radial-gradient(circle at 70% 30%, rgba(0,102,112,0.2) 0%, transparent 50%)",
         }} />
 
-        {/* SVG node markers */}
         <svg
           viewBox="0 0 300 220"
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", zIndex: 2 }}
         >
-          {nodes.map(node => {
-            const { x, y }  = project(node.lat, node.lon);
-            const color      = ALERT_COLOR[node.alert_level] ?? "#22c55e";
-            const isActive   = node.node_id === activeNode;
+          {projectedNodes.map((p1, i) =>
+            projectedNodes.slice(i + 1).map((p2, j) => {
+              const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+              if (dist < 85) {
+                return (
+                  <line
+                    key={`link-${i}-${j}`}
+                    x1={p1.x} y1={p1.y}
+                    x2={p2.x} y2={p2.y}
+                    stroke="rgba(255, 255, 255, 0.2)"
+                    strokeWidth={1}
+                    strokeDasharray="2 3"
+                  />
+                );
+              }
+              return null;
+            })
+          )}
+
+          {projectedNodes.map(node => {
+            const color    = ALERT_COLOR[node.alert_level] ?? "#22c55e";
+            const isActive = node.node_id === activeNode;
 
             return (
               <g
                 key={node.node_id}
-                transform={`translate(${x},${y})`}
+                transform={`translate(${node.x},${node.y})`}
                 style={{ cursor: "pointer" }}
                 onClick={() => onSelectNode?.(node.node_id)}
               >
@@ -122,7 +161,7 @@ export default function NodeMap({ activeNode, onSelectNode }: NodeMapProps) {
 
         {/* Active node info card */}
         {nodes.length > 0 && (() => {
-          const active = nodes.find(n => n.node_id === activeNode) ?? nodes[0];
+          const active = projectedNodes.find(n => n.node_id === activeNode) ?? projectedNodes[0];
           const color  = ALERT_COLOR[active.alert_level] ?? "#22c55e";
           return (
             <div style={{
@@ -131,13 +170,17 @@ export default function NodeMap({ activeNode, onSelectNode }: NodeMapProps) {
               backdropFilter: "blur(8px)",
               padding: 12, borderRadius: 8,
               border: `1px solid ${color}55`,
+              zIndex: 10,
             }}>
               <p style={{ fontSize: 10, fontFamily: "var(--font-label)", fontWeight: 700, color: "var(--on-surface)", textTransform: "uppercase", margin: "0 0 2px" }}>
                 {active.node_id.toUpperCase()} — {active.label}
               </p>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <p style={{ fontSize: 11, fontFamily: "monospace", color: "var(--primary)", margin: 0 }}>
-                  {active.lat.toFixed(4)}° N, {active.lon.toFixed(4)}° W
+                  {/* Différencie l'affichage si c'est dynamique ou physique */}
+                  {active.lat !== 0 
+                    ? `${active.lat.toFixed(4)}° N, ${active.lon.toFixed(4)}° W` 
+                    : "DYNAMIC CLUSTER MESH"}
                 </p>
                 <span style={{
                   fontSize: 9, fontWeight: 800, fontFamily: "var(--font-label)",

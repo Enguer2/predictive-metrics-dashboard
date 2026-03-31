@@ -7,3 +7,4 @@ joblib
 psutil
 psycopg2-binary
 sqlalchemy
+requests>=2.31.0

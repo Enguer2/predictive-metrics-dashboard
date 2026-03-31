@@ -5,24 +5,30 @@ import Sidebar   from "@/components/Sidebar";
 import Dashboard from "@/components/Dashboard";
 import { type AlertLevel } from "@/lib/api";
 
-/**
- * Page racine — gère l'état global :
- *   - activeNode   : node sélectionné dans la Sidebar
- *   - nodeAlerts   : map node_id → AlertLevel, mise à jour par le Dashboard
- *
- * La Sidebar reçoit nodeAlerts pour colorer les boutons.
- * Le Dashboard reçoit activeNode et remonte les alertes via onAlertChange.
- */
+
 export default function Home() {
   const [activeNode, setActiveNode] = useState<string>("cluster_01");
   const [nodeAlerts, setNodeAlerts] = useState<Record<string, AlertLevel>>({});
 
   const handleAlertChange = useCallback((nodeId: string, alert: AlertLevel) => {
     setNodeAlerts(prev => {
-      if (prev[nodeId] === alert) return prev; // évite les re-renders inutiles
+      if (prev[nodeId] === alert) return prev;
       return { ...prev, [nodeId]: alert };
     });
   }, []);
+
+
+  const handleNodeKilled = useCallback((killedNodeId: string) => {
+    setNodeAlerts(prev => {
+      const next = { ...prev };
+      delete next[killedNodeId];
+      return next;
+    });
+
+    if (killedNodeId === activeNode) {
+      setActiveNode("cluster_01");
+    }
+  }, [activeNode]);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -30,13 +36,14 @@ export default function Home() {
         activeNode={activeNode}
         onSelectNode={setActiveNode}
         nodeAlerts={nodeAlerts}
+        onNodeKilled={handleNodeKilled}
       />
 
       <main style={{
         marginLeft: 256,
         flex: 1,
         padding: 32,
-        paddingTop: 96, // 64px header + 32px gap
+        paddingTop: 96,
         maxWidth: 1600,
       }}>
         <Dashboard

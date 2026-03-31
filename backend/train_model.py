@@ -158,7 +158,6 @@ THRESHOLDS = {
 joblib.dump(model,        'model.pkl')
 joblib.dump(scaler,       'scaler.pkl')
 joblib.dump(FEATURE_COLS, 'feature_cols.pkl')
-joblib.dump(THRESHOLDS,   'thresholds.pkl')   # partagé avec main.py
+joblib.dump(THRESHOLDS,   'thresholds.pkl')
 
 print("\n✅ model.pkl | scaler.pkl | feature_cols.pkl | thresholds.pkl — sauvegardés.")
-print("🚀 Score hybride actif : RAM 99.9% sera désormais CRITIQUE, même si stable.")

@@ -1,13 +1,16 @@
 """
-main.py — WATCHMAN_OS Backend
-──────────────────────────────
+main.py — WATCHMAN_OS Backend v3.2.0
+──────────────────────────────────────
 Architecture :
-  POST /api/report/{node_id}  ← reçoit les données brutes des agents
-  GET  /api/nodes             ← liste les nodes actifs (Plug & Play)
-  GET  /api/nodes/status      ← dernier snapshot de chaque node
-  GET  /stats/{node_id}       ← polling frontend (mode legacy/simulation)
-  GET  /history/{node_id}     ← 50 derniers points d'un node
-  GET  /                      ← healthcheck
+  POST /api/report/{node_id}     ← reçoit les données brutes des agents
+  GET  /api/nodes                ← liste les nodes actifs (Plug & Play)
+  GET  /api/nodes/status         ← dernier snapshot de chaque node
+  GET  /api/scenarios            ← [NEW] liste les CSV du dossier /dataset
+  POST /api/nodes/deploy         ← provisionne un node simulé à la volée
+  DELETE /api/nodes/{node_id}    ← killswitch : purge DB + mémoire d'un node
+  GET  /stats/{node_id}          ← polling frontend (mode legacy/simulation)
+  GET  /history/{node_id}        ← 50 derniers points d'un node
+  GET  /                         ← healthcheck
 """
 
 from fastapi import FastAPI, HTTPException
@@ -20,9 +23,28 @@ from sqlalchemy.exc import OperationalError
 import joblib
 import numpy as np
 import os
+import csv as csv_module
 import datetime
 import time
+import subprocess
+import sys
 from collections import deque
+from typing import Optional
+
+# ─────────────────────────────────────────────
+# DATASET DIRECTORY
+# Chemin absolu vers le dossier /dataset à la racine du repo.
+# On remonte d'un niveau par rapport à main.py pour trouver la racine.
+# ─────────────────────────────────────────────
+DATASET_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "dataset")
+)
+# Fallback : si main.py est déjà à la racine (docker workdir = /)
+if not os.path.isdir(DATASET_DIR):
+    DATASET_DIR = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "dataset")
+    )
+print(f"📂 Dataset directory: {DATASET_DIR} ({'found' if os.path.isdir(DATASET_DIR) else 'NOT FOUND — will return empty list'})")
 
 # ─────────────────────────────────────────────
 # CONFIGURATION
@@ -87,6 +109,9 @@ except Exception as e:
 # ─────────────────────────────────────────────
 WINDOW_SIZE = 5
 _windows: dict[str, deque] = {}   # {node_id: deque[(cpu, ram, net)]}
+
+# Registry des processus agents déployés localement {node_id: subprocess.Popen}
+_deployed_processes: dict[str, subprocess.Popen] = {}
 
 CPU_DANGER   = 85.0
 RAM_DANGER   = 85.0
@@ -219,16 +244,18 @@ def get_active_nodes_from_db() -> list[str]:
 
 def get_node_meta(node_id: str) -> dict:
     """Métadonnées statiques. Pour un vrai agent, elles pourraient être POSTées à l'enregistrement."""
-    STATIC_META: dict[str, dict] = {
-        "cluster_01": {"label": "Satellite Relay / Northern Sector",  "lat":  64.1265, "lon": -21.8174},
-        "cluster_02": {"label": "Edge Node / Western Grid Relay",     "lat":  48.8566, "lon":   2.3522},
-        "cluster_03": {"label": "Deep Sync / Southern Observatory",   "lat": -33.8688, "lon": 151.2093},
+    STATIC_META = {
+        "cluster_01": {"label": "Cluster Alpha — Paris",  "lat": 48.85, "lon":  2.35},
+        "cluster_02": {"label": "Cluster Beta — London",  "lat": 51.51, "lon": -0.13},
+        "cluster_03": {"label": "Cluster Gamma — NYC",    "lat": 40.71, "lon":-74.00},
+        "cluster_04": {"label": "Cluster Delta — Tokyo",  "lat": 35.68, "lon":139.69},
+        "cluster_05": {"label": "Cluster Epsilon — Dubai","lat": 25.20, "lon": 55.27},
     }
     return STATIC_META.get(node_id, {"label": node_id.replace("_", " ").title(), "lat": 0.0, "lon": 0.0})
 
 
 # ─────────────────────────────────────────────
-# PYDANTIC SCHEMA (pour l'ingestion agent)
+# PYDANTIC SCHEMAS
 # ─────────────────────────────────────────────
 class MetricsPayload(BaseModel):
     cpu:     float = Field(..., ge=0.0, le=100.0,  description="CPU usage in %")
@@ -236,10 +263,18 @@ class MetricsPayload(BaseModel):
     network: float = Field(..., ge=0.0,            description="Network throughput in Gbps")
 
 
+class DeployPayload(BaseModel):
+    node_id:      str            = Field(..., description="Identifiant unique du node à déployer")
+    scenario_file: str           = Field(..., description="Chemin vers le fichier CSV de scénario")
+    interval:     float          = Field(2.0, ge=0.5, le=60.0, description="Intervalle d'envoi en secondes")
+    loop:         bool           = Field(True, description="Reboucler sur le CSV en continu")
+    backend_url:  Optional[str]  = Field(None, description="URL backend (optionnel, utilise localhost par défaut)")
+
+
 # ─────────────────────────────────────────────
 # FASTAPI APP
 # ─────────────────────────────────────────────
-app = FastAPI(title="WATCHMAN_OS API", version="3.0.0")
+app = FastAPI(title="WATCHMAN_OS API", version="3.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -252,7 +287,7 @@ app.add_middleware(
 def read_root():
     return {
         "status":   "online",
-        "version":  "3.0.0",
+        "version":  "3.1.0",
         "ai_model": "loaded" if model else "failed",
         "features": FEATURE_COLS if FEATURE_COLS else [],
     }
@@ -274,14 +309,9 @@ def ingest_report(node_id: str, payload: MetricsPayload):
 # ══════════════════════════════════════════════
 # NODE DISCOVERY  — GET /api/nodes
 # Retourne la liste exhaustive des nodes actifs
-# (utilisé par la Sidebar pour l'effet Plug & Play)
 # ══════════════════════════════════════════════
 @app.get("/api/nodes")
 def list_active_nodes():
-    """
-    Renvoie tous les nodes ayant transmis au moins une fois.
-    Le frontend l'interroge toutes les Xs pour détecter les nouveaux agents.
-    """
     node_ids = get_active_nodes_from_db()
     return [
         {"node_id": nid, **get_node_meta(nid)}
@@ -296,8 +326,141 @@ def list_nodes_compat():
 
 
 # ══════════════════════════════════════════════
+# SCENARIO DISCOVERY  — GET /api/scenarios
+# Scanne le dossier /dataset et retourne les métadonnées
+# de chaque fichier CSV : nom, chemin absolu, taille,
+# nombre de lignes, preview des colonnes.
+# ══════════════════════════════════════════════
+@app.get("/api/scenarios")
+def list_scenarios():
+    """
+    Liste tous les fichiers .csv présents dans le dossier /dataset.
+    Pour chaque fichier, retourne :
+      - filename     : nom du fichier (ex: attack_scenario.csv)
+      - path         : chemin absolu utilisable par watchman_agent.py --file
+      - size_kb      : taille en Ko
+      - row_count    : nombre de lignes de données (hors header)
+      - columns      : liste des colonnes détectées
+      - has_required : True si cpu, ram, network sont toutes présentes
+    Retourne une liste vide si le dossier n'existe pas.
+    """
+    if not os.path.isdir(DATASET_DIR):
+        return []
+
+    scenarios = []
+    for filename in sorted(os.listdir(DATASET_DIR)):
+        if not filename.lower().endswith(".csv"):
+            continue
+
+        filepath = os.path.join(DATASET_DIR, filename)
+        size_kb  = round(os.path.getsize(filepath) / 1024, 1)
+
+        columns   = []
+        row_count = 0
+
+        try:
+            with open(filepath, newline="", encoding="utf-8") as f:
+                reader = csv_module.DictReader(f)
+                columns = list(reader.fieldnames or [])
+                for _ in reader:
+                    row_count += 1
+        except Exception as e:
+            print(f"⚠️  Erreur lecture CSV {filename}: {e}")
+
+        required = {"cpu", "ram", "network"}
+        has_required = required.issubset(set(columns))
+
+        scenarios.append({
+            "filename":     filename,
+            "path":         filepath,
+            "size_kb":      size_kb,
+            "row_count":    row_count,
+            "columns":      columns,
+            "has_required": has_required,
+        })
+
+    return scenarios
+
+
+# ══════════════════════════════════════════════
+# DEPLOY NODE  — POST /api/nodes/deploy
+# Provisionne et lance un agent watchman local à la volée.
+#
+# Architecture "Active" : le backend orchestre lui-même le lancement
+# d'un sous-processus agent, simulant un provisionnement IaC.
+#
+# En production cloud, ce endpoint pourrait :
+#   - Appeler l'API DigitalOcean/AWS pour spawner un container Docker
+#   - Exécuter un playbook Ansible via subprocess
+#   - Déclencher un pipeline CI/CD via webhook
+# ══════════════════════════════════════════════
+@app.post("/api/nodes/deploy", status_code=201)
+def deploy_node(payload: DeployPayload):
+    """
+    Lance l'agent watchman_agent.py en sous-processus pour le node demandé.
+    Si le node est déjà déployé et actif, retourne une erreur 409.
+    """
+    node_id = payload.node_id.strip().lower().replace(" ", "_")
+
+    # Vérifie si un processus est déjà actif pour ce node
+    existing = _deployed_processes.get(node_id)
+    if existing and existing.poll() is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Node '{node_id}' is already running (PID {existing.pid}). Use killswitch first.",
+        )
+
+    # Résolution du chemin de l'agent
+    agent_script = os.path.join(os.path.dirname(__file__), "watchman_agent.py")
+    if not os.path.exists(agent_script):
+        # Fallback : cherche dans le répertoire courant
+        agent_script = "watchman_agent.py"
+
+    scenario_path = payload.scenario_file
+    if not os.path.exists(scenario_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Scenario file not found: '{scenario_path}'. Provide an absolute path or a path relative to the backend working directory.",
+        )
+
+    backend_url = payload.backend_url or "http://localhost:8000"
+
+    cmd = [
+        sys.executable, agent_script,
+        "--node",     node_id,
+        "--file",     scenario_path,
+        "--interval", str(payload.interval),
+        "--backend",  backend_url,
+    ]
+    if payload.loop:
+        cmd.append("--loop")
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            text=True,
+        )
+        _deployed_processes[node_id] = proc
+        print(f"🚀 Node déployé : {node_id} (PID {proc.pid})")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to spawn agent process: {e}")
+
+    return {
+        "status":      "deployed",
+        "node_id":     node_id,
+        "pid":         proc.pid,
+        "scenario":    scenario_path,
+        "interval":    payload.interval,
+        "loop":        payload.loop,
+        "backend_url": backend_url,
+        "message":     f"Agent launched for node '{node_id}' (PID {proc.pid}). Data will appear in the dashboard within {payload.interval * 2:.0f}s.",
+    }
+
+
+# ══════════════════════════════════════════════
 # NODE STATUS MAP  — GET /api/nodes/status
-# Dernier snapshot de chaque node (pour NodeMap)
 # ══════════════════════════════════════════════
 @app.get("/api/nodes/status")
 def get_all_nodes_status():
@@ -345,17 +508,79 @@ def nodes_status_compat():
 
 
 # ══════════════════════════════════════════════
+# [NEW] KILLSWITCH  — DELETE /api/nodes/{node_id}
+#
+# Remédiation complète en 3 étapes :
+#   1. Tue le sous-processus agent local s'il existe
+#   2. Purge toutes les entrées DB du node
+#   3. Efface la fenêtre glissante en mémoire
+#
+# Niveau 1 implémenté (purge locale).
+# Pour un Niveau 2 "Pro" (signal distant), implémenter une WebSocket
+# ou un endpoint /shutdown sur l'agent distant.
+# ══════════════════════════════════════════════
+@app.delete("/api/nodes/{node_id}")
+def killswitch_node(node_id: str):
+    """
+    Killswitch : stoppe l'agent, purge la DB et la mémoire pour ce node.
+    Retourne un résumé des actions effectuées.
+    """
+    actions = []
+
+    # ── Étape 1 : Terminer le sous-processus agent (si déployé via /deploy) ──
+    proc = _deployed_processes.pop(node_id, None)
+    if proc:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                actions.append(f"agent_process: KILLED (PID {proc.pid}, did not terminate gracefully)")
+            else:
+                actions.append(f"agent_process: TERMINATED (PID {proc.pid})")
+        else:
+            actions.append(f"agent_process: already_stopped (PID {proc.pid}, exit code {proc.returncode})")
+    else:
+        actions.append("agent_process: not_managed (external agent or already stopped)")
+
+    # ── Étape 2 : Purger la base de données ──────────────────────────────────
+    db = SessionLocal()
+    deleted_rows = 0
+    try:
+        deleted_rows = db.query(MetricLog).filter(MetricLog.node_id == node_id).delete()
+        db.commit()
+        actions.append(f"database: {deleted_rows} records deleted")
+    except Exception as e:
+        db.rollback()
+        actions.append(f"database: ERROR — {e}")
+    finally:
+        db.close()
+
+    # ── Étape 3 : Effacer la fenêtre glissante en mémoire ────────────────────
+    if node_id in _windows:
+        _windows.pop(node_id)
+        actions.append("memory_window: cleared")
+    else:
+        actions.append("memory_window: not_found (already clean)")
+
+    print(f"🛑 Killswitch activé pour node '{node_id}' | actions : {actions}")
+
+    return {
+        "status":       "terminated",
+        "node_id":      node_id,
+        "deleted_rows": deleted_rows,
+        "actions":      actions,
+        "message":      f"Node '{node_id}' has been fully purged from the system.",
+        "timestamp":    datetime.datetime.now().isoformat(),
+    }
+
+
+# ══════════════════════════════════════════════
 # STATS POLLING  — GET /stats/{node_id}
-# Conservé pour compatibilité frontend (mode pull).
-# En mode agent, c'est le POST /api/report qui alimente la DB ;
-# ce endpoint lit simplement la dernière ligne pour ce node.
 # ══════════════════════════════════════════════
 @app.get("/stats/{node_id}")
 def get_stats(node_id: str):
-    """
-    Retourne le dernier enregistrement connu pour ce node.
-    Si aucune donnée n'existe encore, retourne des zéros (état initial).
-    """
     db  = SessionLocal()
     try:
         log = (
@@ -443,4 +668,18 @@ def get_window():
     return {
         "window_size":   WINDOW_SIZE,
         "nodes_tracked": {k: list(v) for k, v in _windows.items()},
+    }
+
+
+# ── [NEW] Deployed processes status ──────────────────────────────────────────
+@app.get("/api/nodes/processes")
+def get_deployed_processes():
+    """Debug endpoint : liste les processus agents gérés par le backend."""
+    return {
+        node_id: {
+            "pid":       proc.pid,
+            "running":   proc.poll() is None,
+            "exit_code": proc.returncode,
+        }
+        for node_id, proc in _deployed_processes.items()
     }

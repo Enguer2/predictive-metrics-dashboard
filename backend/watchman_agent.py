@@ -1,5 +1,5 @@
 """
-watchman_agent.py — Agent de monitoring déporté WATCHMAN_OS
+watchman_agent.py
 ─────────────────────────────────────────────────────────────
 Usage :
     python watchman_agent.py --node node_paris --file data/normal_traffic.csv
