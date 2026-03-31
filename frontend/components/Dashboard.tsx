@@ -1,114 +1,150 @@
 "use client";
 
-import { useEffect, useState } from "react";
-// Assure-toi que getHistory et getLiveSystemStats sont mis à jour dans api.ts pour retourner 'network'
-import { checkBackendStatus, getLiveSystemStats, getHistory } from "@/lib/api"; 
+import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  checkBackendStatus,
+  getLiveSystemStats,
+  getHistory,
+  type AlertLevel,
+  type StatsPayload,
+  type HistoryEntry,
+} from "@/lib/api";
 import NeuralPredict from "./NeuralPredict";
-import KernelLogs from "./KernelLogs";
-import NodeMap from "./NodeMap";
-import Telemetry from "./Telemetry";
+import KernelLogs    from "./KernelLogs";
+import NodeMap       from "./NodeMap";
+import Telemetry     from "./Telemetry";
 
-export default function Dashboard() {
-  const [apiStatus, setApiStatus] = useState<"connecting" | "online" | "offline">("connecting");
-  const [lastPrediction, setLastPrediction] = useState<any>(null);
-  // ÉTAPE 1 : On ajoute 'network' dans le state initial
-  const [metrics, setMetrics] = useState({ cpu: 0, ram: 0, network: 0 }); 
-  const [history, setHistory] = useState<any[]>([]);
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-  // 1. Vérification de la connexion ET chargement de l'historique au démarrage
+interface DashboardProps {
+  /** Node courant sélectionné depuis la Sidebar */
+  activeNode:   string;
+  /** Callback permettant à la Sidebar de connaître l'alerte de chaque node */
+  onAlertChange?: (nodeId: string, alert: AlertLevel) => void;
+  /** Pour le switch de node depuis la NodeMap */
+  onSelectNode?: (nodeId: string) => void;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function Dashboard({ activeNode, onAlertChange, onSelectNode }: DashboardProps) {
+  const [apiStatus, setApiStatus]     = useState<"connecting" | "online" | "offline">("connecting");
+  const [lastPrediction, setLastPred] = useState<StatsPayload | null>(null);
+  const [metrics, setMetrics]         = useState({ cpu: 0, ram: 0, network: 0 });
+  const [history, setHistory]         = useState<HistoryEntry[]>([]);
+
+  // Track the node for which data is currently loaded (to detect switches)
+  const loadedNodeRef = useRef<string>("");
+
+  // ── 1. Healthcheck au démarrage ────────────────────────────────────────────
   useEffect(() => {
-    async function initDashboard() {
-      const statusData = await checkBackendStatus();
-      
-      if (statusData.status === "online") {
-        setApiStatus("online");
-        const historicalData = await getHistory();
-        if (historicalData) {
-          setHistory(historicalData);
-          const lastEntry = historicalData[historicalData.length - 1];
-          if (lastEntry) {
-            // ÉTAPE 2 : On initialise avec network si dispo
-            setMetrics({ cpu: lastEntry.cpu, ram: lastEntry.ram, network: lastEntry.network || 0 }); 
-          }
-        }
-      } else {
-        setApiStatus("offline");
-      }
-    }
-    initDashboard();
+    checkBackendStatus().then(({ status }) => setApiStatus(status === "online" ? "online" : "offline"));
   }, []);
 
-  // 2. Boucle de monitoring temps réel (Direct)
+  // ── 2. Rechargement de l'historique quand le node actif change ─────────────
+  useEffect(() => {
+    if (apiStatus !== "online") return;
+    if (loadedNodeRef.current === activeNode) return;
+
+    loadedNodeRef.current = activeNode;
+    setMetrics({ cpu: 0, ram: 0, network: 0 });
+    setLastPred(null);
+
+    getHistory(activeNode).then(hist => {
+      if (!hist?.length) { setHistory([]); return; }
+      setHistory(hist);
+      const last = hist[hist.length - 1];
+      if (last) setMetrics({ cpu: last.cpu, ram: last.ram, network: last.network ?? 0 });
+    });
+  }, [apiStatus, activeNode]);
+
+  // ── 3. Boucle de polling temps réel ────────────────────────────────────────
   useEffect(() => {
     if (apiStatus !== "online") return;
 
-    const fetchRealStats = async () => {
-      const data = await getLiveSystemStats();
-      
-      if (data) {
-        // ÉTAPE 3 : On met à jour le state metrics avec la donnée réseau reçue de l'API
-        setMetrics({ cpu: data.cpu, ram: data.ram, network: data.network || 0 }); 
-        setLastPrediction({ 
-          is_anomaly:    data.is_anomaly, 
-          ai_risk_score: data.ai_risk_score,   // ← manquait
-          alert_level:   data.alert_level,     // ← manquait
-          cpu:           data.cpu, 
-          ram:           data.ram, 
-          timestamp:     new Date().toLocaleTimeString() 
-        });
+    const tick = async () => {
+      const data = await getLiveSystemStats(activeNode);
+      if (!data) return;
 
-        // On garde les 50 derniers points dans l'historique
-        setHistory(prev => [...prev.slice(-49), {
+      setMetrics({ cpu: data.cpu, ram: data.ram, network: data.network ?? 0 });
+      setLastPred(data);
+
+      // Remonte l'alerte courante à la Sidebar via le callback
+      onAlertChange?.(data.node_id, data.alert_level);
+
+      setHistory(prev => [
+        ...prev.slice(-49),
+        {
+          node_id:       data.node_id,
           cpu:           data.cpu,
           ram:           data.ram,
-          network:       data.network || 0,
+          network:       data.network ?? 0,
+          cpu_delta:     data.cpu_delta,
+          ram_delta:     data.ram_delta,
+          combined_load: data.combined_load,
           is_anomaly:    data.is_anomaly,
-          ai_risk_score: data.ai_risk_score,   // ← manquait
-          alert_level:   data.alert_level,     // ← manquait
-          timestamp:     new Date().toLocaleTimeString()
-        }]);
-      }
+          ai_risk_score: data.ai_risk_score,
+          alert_level:   data.alert_level,
+          timestamp:     data.timestamp,
+        },
+      ]);
     };
 
-    const interval = setInterval(fetchRealStats, 2000); 
-    return () => clearInterval(interval);
-  }, [apiStatus]);
+    const id = setInterval(tick, 2000);
+    return () => clearInterval(id);
+  }, [apiStatus, activeNode, onAlertChange]);
+
+  // ── Dérivés ────────────────────────────────────────────────────────────────
+  const statusColor = apiStatus === "online" ? "#22c55e" : "#ef4444";
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 32 }}>
+      {/* ── Top bar ─────────────────────────────────────────────────────── */}
+      <div style={{
+        display: "flex", justifyContent: "space-between",
+        alignItems: "flex-start", marginBottom: 32,
+        flexWrap: "wrap", gap: 16,
+      }}>
         <div>
-          <h1 style={{ fontSize: 36, fontWeight: 700, margin: 0, fontFamily: "var(--font-headline)", color: "var(--on-surface)" }}>
-            NODE: CLUSTER_01
+          <h1 style={{
+            fontSize: 36, fontWeight: 700, margin: 0,
+            fontFamily: "var(--font-headline)", color: "var(--on-surface)",
+          }}>
+            NODE: {activeNode.toUpperCase()}
           </h1>
-          <p style={{ color: "var(--on-surface-variant)", fontFamily: "var(--font-label)" }}>
-            Satellite Relay / Northern Sector Deployment
+          <p style={{ color: "var(--on-surface-variant)", fontFamily: "var(--font-label)", margin: "4px 0 0" }}>
+            Live AI Predictive Monitoring — Agent-Driven Mode
           </p>
         </div>
 
-        <div style={{ 
-          background: apiStatus === "online" ? "rgba(34, 197, 94, 0.1)" : "rgba(186, 26, 26, 0.1)", 
-          padding: "8px 16px", borderRadius: 8, display: "flex", alignItems: "center", gap: 12,
-          border: `1px solid ${apiStatus === "online" ? "#22c55e" : "#ba1a1a"}`
+        {/* Status badge */}
+        <div style={{
+          background: `${statusColor}18`,
+          padding: "8px 16px", borderRadius: 8,
+          display: "flex", alignItems: "center", gap: 12,
+          border: `1px solid ${statusColor}`,
+          alignSelf: "center",
         }}>
-          <div className={apiStatus === "online" ? "animate-pulse" : ""} 
-               style={{ width: 8, height: 8, borderRadius: "50%", background: apiStatus === "online" ? "#22c55e" : "#ba1a1a" }} />
+          <div
+            className={apiStatus === "online" ? "animate-pulse" : ""}
+            style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor }}
+          />
           <span style={{ fontSize: 12, fontWeight: 700, color: "var(--on-surface)", fontFamily: "var(--font-label)" }}>
             {apiStatus === "online" ? "LIVE PREDICTIVE LINK ACTIVE" : "AI ENGINE OFFLINE"}
           </span>
         </div>
       </div>
 
+      {/* ── Main grid ───────────────────────────────────────────────────── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 24 }}>
         <section style={{ gridColumn: "span 8", display: "flex", flexDirection: "column", gap: 24 }}>
-          {/* L'orchestrateur passe les nouvelles metrics complètes au composant visuel */}
           <NeuralPredict metrics={metrics} prediction={lastPrediction} history={history} />
-          <KernelLogs prediction={lastPrediction} />
+          <KernelLogs prediction={lastPrediction} activeNode={activeNode} />
         </section>
 
-        <section style={{ gridColumn: "span 4", display: "flex", flexDirection: "column", gap: 24 }}>
-          <NodeMap />
-          <Telemetry />
+        <section style={{ gridColumn: "span 4", display: "flex", flexDirection: "column", gap: 16 }}>
+          <NodeMap activeNode={activeNode} onSelectNode={onSelectNode} />
+          <Telemetry metrics={metrics} activeNode={activeNode} />
         </section>
       </div>
     </>
