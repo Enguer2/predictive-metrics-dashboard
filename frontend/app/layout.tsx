@@ -70,15 +70,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           borderBottom: "1px solid #e2e8f0",
         }}>
           <div style={{ fontWeight: 800, color: "#155e75", fontSize: 20, fontFamily: "var(--font-headline)" }}>
-            WATCHMAN_OS
+            WATCHMAN PREDICTIVE
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ display: "flex", gap: 16 }}>
-              <Search  size={18} color="#64748b" />
-              <Bell    size={18} color="#64748b" />
-              <Settings size={18} color="#64748b" />
-            </div>
-            <div style={{ height: 32, width: 32, borderRadius: "50%", background: "#e2e8f0" }} />
           </div>
         </header>
 
