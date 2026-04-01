@@ -1,11 +1,11 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import {
   X, Rocket, FileText, Server, Clock, RefreshCw,
   CheckCircle, AlertTriangle, Database, ChevronRight,
 } from "lucide-react";
-import { getScenarios, type ScenarioEntry } from "@/lib/api";
+import { getScenarios, getSessionId, type ScenarioEntry } from "@/lib/api";
+
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -91,9 +91,13 @@ export default function DeployModal({ onClose, onDeployed }: DeployModalProps) {
     setResult(null);
 
     try {
+      const sessionId = getSessionId();
       const res = await fetch(`${API_URL}/api/nodes/deploy`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId
+        },
         body: JSON.stringify({
           node_id:       nodeId.trim().toLowerCase().replace(/\s+/g, "_"),
           scenario_file: selected.path,

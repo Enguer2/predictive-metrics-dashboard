@@ -693,23 +693,34 @@ def get_deployed_processes():
         for node_id, proc in _deployed_processes.items()
     }
 
-
-# --- NOUVEAU GARBAGE COLLECTOR (Natif AsyncIO) ---
-
 async def cleanup_task():
     """Tâche de fond qui tourne indéfiniment pendant que le serveur est allumé"""
     while True:
-        await asyncio.sleep(300)  # Pause de 5 minutes (300 secondes)
+        await asyncio.sleep(300)
         
         cutoff_time = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
         db = SessionLocal()
         try:
-            # Trouver les sessions inactives
-            inactive_sessions = db.query(MetricLog.session_id).group_by(MetricLog.session_id).having(func.max(MetricLog.timestamp) < cutoff_time).all()
+            inactive_sessions = (
+                db.query(MetricLog.session_id)
+                .group_by(MetricLog.session_id)
+                .having(func.max(MetricLog.timestamp) < cutoff_time)
+                .all()
+            )
             
             for (sid,) in inactive_sessions:
                 print(f"🧹 Nettoyage de la session morte : {sid}")
-                # Plus tard, tu pourras ajouter ici la logique pour tuer les processus
+                
+                dead_nodes = (
+                    db.query(MetricLog.node_id)
+                    .filter(MetricLog.session_id == sid)
+                    .distinct()
+                    .all()
+                )
+                
+                for (nid,) in dead_nodes:
+                    print(f"   -> Auto-killswitch du node : {nid}")
+                    killswitch_node(nid)
                 
             db.commit()
         except Exception as e:
