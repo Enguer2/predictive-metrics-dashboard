@@ -174,9 +174,11 @@ def get_alert_level(risk_score: int, cpu_delta: float, ram_delta: float) -> str:
 # CORE INFERENCE + STORAGE
 # Called both from POST /api/report and GET /stats
 # ─────────────────────────────────────────────
-def process_metrics(node_id: str, cpu: float, ram: float, network: float) -> dict:
-    """Calcule les features, fait tourner l'IA, sauvegarde en DB, retourne le payload."""
-    features        = compute_features(node_id, cpu, ram, network)
+# Remplacer process_metrics
+def process_metrics(session_id: str, node_id: str, cpu: float, ram: float, network: float) -> dict:
+    internal_id = f"{session_id}_{node_id}" # <-- Clé unique par utilisateur
+    features    = compute_features(internal_id, cpu, ram, network)
+    
     is_anomaly      = False
     prediction_code = 1
     ai_risk_score   = 0
@@ -194,12 +196,12 @@ def process_metrics(node_id: str, cpu: float, ram: float, network: float) -> dic
             is_anomaly    = alert_level != "OK"
             prediction_code = -1 if is_anomaly else 1
         except Exception as e:
-            print(f"⚠️  Erreur prédiction IA [{node_id}]: {e}")
+            print(f"⚠️ Erreur prédiction IA [{internal_id}]: {e}")
 
-    # Persist
     try:
         db = SessionLocal()
         db.add(MetricLog(
+            session_id    = session_id, # <-- SAUVEGARDE CRUCIALE
             node_id       = node_id,
             cpu           = cpu,
             ram           = ram,
@@ -213,41 +215,31 @@ def process_metrics(node_id: str, cpu: float, ram: float, network: float) -> dic
         ))
         db.commit()
     except Exception as e:
-        print(f"⚠️  Erreur sauvegarde DB [{node_id}]: {e}")
+        print(f"⚠️ Erreur sauvegarde DB [{internal_id}]: {e}")
     finally:
         db.close()
 
     return {
-        "node_id":         node_id,
-        "cpu":             cpu,
-        "ram":             ram,
-        "network":         network,
-        "cpu_delta":       round(features["cpu_delta"], 2),
-        "ram_delta":       round(features["ram_delta"], 2),
-        "combined_load":   round(features["combined_load"], 2),
-        "is_anomaly":      is_anomaly,
-        "prediction_code": prediction_code,
-        "ai_risk_score":   ai_risk_score,
-        "alert_level":     alert_level,
-        "raw_if_score":    round(float(raw_score), 4),
-        "timestamp":       datetime.datetime.now().strftime("%H:%M:%S"),
+        "node_id": node_id,
+        "is_anomaly": is_anomaly,
+        "ai_risk_score": ai_risk_score,
+        "alert_level": alert_level,
     }
 
 
 # ─────────────────────────────────────────────
 # DYNAMIC NODE REGISTRY  (Plug & Play)
 # ─────────────────────────────────────────────
-def get_active_nodes_from_db() -> list[str]:
-    """Retourne tous les node_id distincts ayant déjà envoyé des données."""
+def get_active_nodes_from_db(session_id: str) -> list[str]:
+    """Retourne tous les node_id distincts de LA SESSION ACTUELLE."""
     try:
-        db    = SessionLocal()
-        rows  = db.query(MetricLog.node_id).distinct().all()
-        return [r.node_id for r in rows]
+        db   = SessionLocal()
+        rows = db.query(MetricLog.node_id).filter(MetricLog.session_id == session_id).distinct().all()
+        return [r[0] for r in rows]
     except Exception:
         return []
     finally:
         db.close()
-
 
 def get_node_meta(node_id: str) -> dict:
     """Métadonnées statiques. Pour un vrai agent, elles pourraient être POSTées à l'enregistrement."""
@@ -306,25 +298,64 @@ def read_root():
 # ══════════════════════════════════════════════
 @app.post("/api/report/{node_id}")
 def ingest_report(node_id: str, payload: MetricsPayload, x_session_id: str = Header("anonymous")):
-    """
-    Reçoit les métriques brutes d'un agent, applique l'IA et stocke le résultat.
-    Si node_id est inconnu, il est enregistré dynamiquement (Plug & Play).
-    """
-    return process_metrics(node_id, payload.cpu, payload.ram, payload.network)
+    return process_metrics(x_session_id, node_id, payload.cpu, payload.ram, payload.network)
 
 
 # ══════════════════════════════════════════════
 # NODE DISCOVERY  — GET /api/nodes
 # Retourne la liste exhaustive des nodes actifs
 # ══════════════════════════════════════════════
+# Remplacer la route /api/nodes
 @app.get("/api/nodes")
-def list_active_nodes():
-    node_ids = get_active_nodes_from_db()
-    return [
-        {"node_id": nid, **get_node_meta(nid)}
-        for nid in node_ids
-    ]
+def list_active_nodes(session_id: str = Depends(get_session)):
+    node_ids = get_active_nodes_from_db(session_id)
+    return [{"node_id": nid, **get_node_meta(nid)} for nid in node_ids]
 
+# Remplacer la route /api/nodes/status
+@app.get("/api/nodes/status")
+def get_all_nodes_status(session_id: str = Depends(get_session)):
+    node_ids = get_active_nodes_from_db(session_id)
+    result   = []
+    db       = SessionLocal()
+    try:
+        for node_id in node_ids:
+            log = (
+                db.query(MetricLog)
+                  .filter(MetricLog.node_id == node_id)
+                  .filter(MetricLog.session_id == session_id) # <-- Filtre ajouté
+                  .order_by(MetricLog.id.desc())
+                  .first()
+            )
+            meta = get_node_meta(node_id)
+            if log:
+                result.append({
+                    "node_id": node_id, "label": meta["label"],
+                    "lat": meta["lat"], "lon": meta["lon"],
+                    "cpu": log.cpu, "ram": log.ram, "network": log.network,
+                    "alert_level": log.alert_level, "ai_risk_score": log.ai_risk_score,
+                    "timestamp": log.timestamp.strftime("%H:%M:%S") if log.timestamp else None,
+                })
+    finally:
+        db.close()
+    return result
+
+# Remplacer la route /stats/{node_id}
+@app.get("/stats/{node_id}")
+def get_stats(node_id: str, session_id: str = Depends(get_session)):
+    db = SessionLocal()
+    try:
+        log = (
+            db.query(MetricLog)
+              .filter(MetricLog.node_id == node_id)
+              .filter(MetricLog.session_id == session_id) # <-- Filtre ajouté
+              .order_by(MetricLog.id.desc())
+              .first()
+        )
+    finally:
+        db.close()
+    
+    if not log:
+        return {"node_id": node_id, "cpu": 0.0, "ram": 0.0, "network": 0.0} # (tronqué pour concision, remet ton dict par défaut)
 
 # ── Compat alias (ancienne route /nodes) ─────────────────────────────────────
 @app.get("/nodes")
@@ -408,9 +439,12 @@ def deploy_node(payload: DeployPayload, session_id: str = Depends(get_session)):
     Si le node est déjà déployé et actif, retourne une erreur 409.
     """
     node_id = payload.node_id.strip().lower().replace(" ", "_")
+    
+    # CORRECTION 1 : Créer la clé unique combinant la session et le node
+    internal_id = f"{session_id}_{node_id}" 
 
-    # Vérifie si un processus est déjà actif pour ce node
-    existing = _deployed_processes.get(node_id)
+    # CORRECTION 2 : Vérifier l'existence en utilisant internal_id
+    existing = _deployed_processes.get(internal_id)
     if existing and existing.poll() is None:
         raise HTTPException(
             status_code=409,
@@ -450,8 +484,11 @@ def deploy_node(payload: DeployPayload, session_id: str = Depends(get_session)):
             stderr=sys.stderr,
             text=True,
         )
-        _deployed_processes[node_id] = proc
-        print(f"🚀 Node déployé : {node_id} (PID {proc.pid})")
+        # CORRECTION 3 : Sauvegarder le processus avec l'internal_id
+        _deployed_processes[internal_id] = proc
+        
+        # CORRECTION 4 : Optionnel mais recommandé, afficher internal_id dans le print pour le debug
+        print(f"🚀 Node déployé : {internal_id} (PID {proc.pid})")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to spawn agent process: {e}")
 
