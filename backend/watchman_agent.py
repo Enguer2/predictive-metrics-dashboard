@@ -81,7 +81,7 @@ def load_csv(filepath: str) -> list[dict]:
         sys.exit(1)
 
     rows = []
-    with open(filepath, newline="", encoding="utf-8") as f:
+    with open(filepath, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         required = {"cpu", "ram", "network"}
         if not required.issubset(set(reader.fieldnames or [])):

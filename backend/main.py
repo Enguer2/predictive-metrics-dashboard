@@ -359,7 +359,7 @@ def list_scenarios():
         row_count = 0
 
         try:
-            with open(filepath, newline="", encoding="utf-8") as f:
+            with open(filepath, newline="", encoding="utf-8-sig") as f:
                 reader = csv_module.DictReader(f)
                 columns = list(reader.fieldnames or [])
                 for _ in reader:
