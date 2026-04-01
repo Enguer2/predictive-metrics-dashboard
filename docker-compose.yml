@@ -33,6 +33,7 @@ services:
     depends_on:
       - backend
     environment:
+      - NEXT_PUBLIC_API_URL=http://141.253.103.112:8000
       - HOST=0.0.0.0
       - PORT=3000
 
