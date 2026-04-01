@@ -32,6 +32,9 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
 
 volumes:
   postgres_data:
