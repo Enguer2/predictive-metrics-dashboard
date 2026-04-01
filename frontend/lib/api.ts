@@ -74,9 +74,25 @@ export interface KillswitchResult {
 
 // ── Internal helper ───────────────────────────────────────────────────────────
 
+export function getSessionId(): string {
+  if (typeof window === "undefined") return "server_render";
+  let sid = sessionStorage.getItem("watchman_session_id");
+  if (!sid) {
+    sid = crypto.randomUUID();
+    sessionStorage.setItem("watchman_session_id", sid);
+  }
+  return sid;
+}
+
+// Mise à jour du helper interne "get"
 async function get<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
+    const res = await fetch(`${API_URL}${path}`, { 
+      cache: "no-store",
+      headers: {
+        "X-Session-ID": getSessionId()
+      }
+    });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch (err) {

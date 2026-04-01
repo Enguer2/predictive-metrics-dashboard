@@ -13,7 +13,7 @@ Architecture :
   GET  /                         ← healthcheck
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, Float, Boolean, Integer, DateTime, String, func
@@ -30,6 +30,7 @@ import subprocess
 import sys
 from collections import deque
 from typing import Optional
+import asyncio
 
 # ─────────────────────────────────────────────
 # DATASET DIRECTORY
@@ -63,6 +64,7 @@ Base         = declarative_base()
 class MetricLog(Base):
     __tablename__ = "metrics_history"
     id            = Column(Integer, primary_key=True, index=True)
+    session_id    = Column(String, index=True, nullable=False, default="anonymous") # <-- NOUVEAU
     node_id       = Column(String,  index=True, nullable=False)
     cpu           = Column(Float,   nullable=False)
     ram           = Column(Float,   nullable=False)
@@ -74,6 +76,11 @@ class MetricLog(Base):
     ai_risk_score = Column(Integer, default=0)
     alert_level   = Column(String,  default="OK")
     timestamp     = Column(DateTime, default=datetime.datetime.utcnow)
+
+def get_session(x_session_id: str = Header(None)):
+    if not x_session_id:
+        return "anonymous" # Fallback
+    return x_session_id
 
 # ─────────────────────────────────────────────
 # DB INIT WITH RETRY
@@ -298,7 +305,7 @@ def read_root():
 # C'est ici que les agents déportés envoient leurs données.
 # ══════════════════════════════════════════════
 @app.post("/api/report/{node_id}")
-def ingest_report(node_id: str, payload: MetricsPayload):
+def ingest_report(node_id: str, payload: MetricsPayload, x_session_id: str = Header("anonymous")):
     """
     Reçoit les métriques brutes d'un agent, applique l'IA et stocke le résultat.
     Si node_id est inconnu, il est enregistré dynamiquement (Plug & Play).
@@ -395,7 +402,7 @@ def list_scenarios():
 #   - Déclencher un pipeline CI/CD via webhook
 # ══════════════════════════════════════════════
 @app.post("/api/nodes/deploy", status_code=201)
-def deploy_node(payload: DeployPayload):
+def deploy_node(payload: DeployPayload, session_id: str = Depends(get_session)):
     """
     Lance l'agent watchman_agent.py en sous-processus pour le node demandé.
     Si le node est déjà déployé et actif, retourne une erreur 409.
@@ -431,6 +438,7 @@ def deploy_node(payload: DeployPayload):
         "--file",     scenario_path,
         "--interval", str(payload.interval),
         "--backend",  backend_url,
+        "--session",  session_id
     ]
     if payload.loop:
         cmd.append("--loop")
@@ -627,12 +635,13 @@ def get_stats_compat():
 # HISTORY  — GET /history/{node_id}
 # ══════════════════════════════════════════════
 @app.get("/history/{node_id}")
-def get_history(node_id: str):
+def get_history(node_id: str, session_id: str = Depends(get_session)):
     db   = SessionLocal()
     try:
         logs = (
             db.query(MetricLog)
               .filter(MetricLog.node_id == node_id)
+              .filter(MetricLog.session_id == session_id)
               .order_by(MetricLog.id.desc())
               .limit(50)
               .all()
@@ -683,3 +692,32 @@ def get_deployed_processes():
         }
         for node_id, proc in _deployed_processes.items()
     }
+
+
+# --- NOUVEAU GARBAGE COLLECTOR (Natif AsyncIO) ---
+
+async def cleanup_task():
+    """Tâche de fond qui tourne indéfiniment pendant que le serveur est allumé"""
+    while True:
+        await asyncio.sleep(300)  # Pause de 5 minutes (300 secondes)
+        
+        cutoff_time = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
+        db = SessionLocal()
+        try:
+            # Trouver les sessions inactives
+            inactive_sessions = db.query(MetricLog.session_id).group_by(MetricLog.session_id).having(func.max(MetricLog.timestamp) < cutoff_time).all()
+            
+            for (sid,) in inactive_sessions:
+                print(f"🧹 Nettoyage de la session morte : {sid}")
+                # Plus tard, tu pourras ajouter ici la logique pour tuer les processus
+                
+            db.commit()
+        except Exception as e:
+            print(f"⚠️ Erreur Garbage Collector : {e}")
+        finally:
+            db.close()
+
+@app.on_event("startup")
+async def startup_event():
+    """Au démarrage de l'API, on lance la tâche de fond"""
+    asyncio.create_task(cleanup_task())

@@ -54,6 +54,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Reboucle sur le CSV indéfiniment (simulation continue)",
     )
+    parser.add_argument(
+        "--session",
+        default="anonymous",
+        help="ID de la session frontend",
+        )
     return parser.parse_args()
 
 
@@ -129,7 +134,7 @@ def wait_for_backend(url: str, retries: int = 15, delay: float = 3.0) -> None:
 def run(args: argparse.Namespace) -> None:
     rows     = load_csv(args.file)
     endpoint = f"{args.backend}/api/report/{args.node}"
-
+    headers = {"X-Session-ID": args.session}
     wait_for_backend(args.backend)
 
     log("INFO", f"Agent démarré — Node: {BOLD}{args.node}{RESET}  Endpoint: {endpoint}")
@@ -155,7 +160,7 @@ def run(args: argparse.Namespace) -> None:
                 "network": round(row["network"], 4),
             }
             try:
-                resp = requests.post(endpoint, json=payload, timeout=10)
+                resp = requests.post(endpoint, json=payload, headers=headers, timeout=10)
                 resp.raise_for_status()
                 data = resp.json()
 
