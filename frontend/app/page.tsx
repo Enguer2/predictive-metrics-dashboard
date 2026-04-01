@@ -53,9 +53,22 @@ export default function Home() {
 
   // ── Fonction pour lancer une nouvelle session ──
   const handleStartSession = () => {
-    const newSessionId = crypto.randomUUID();
-    sessionStorage.setItem("watchman_session_id", newSessionId);
-    setIsSessionActive(true);
+    try {
+      // Plan A : HTTPS / Localhost
+      let newSessionId;
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        newSessionId = crypto.randomUUID();
+      } else {
+        // Plan B : HTTP simple (Générateur aléatoire manuel)
+        newSessionId = 'session_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      }
+      
+      sessionStorage.setItem("watchman_session_id", newSessionId);
+      setIsSessionActive(true);
+    } catch (error) {
+      console.error("Erreur lors de la création de la session:", error);
+      alert("Erreur d'initialisation. Vérifiez la console.");
+    }
   };
 
   // ── Callbacks du Dashboard ──
