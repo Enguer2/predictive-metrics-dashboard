@@ -565,15 +565,12 @@ def nodes_status_compat():
 # ou un endpoint /shutdown sur l'agent distant.
 # ══════════════════════════════════════════════
 @app.delete("/api/nodes/{node_id}")
-def killswitch_node(node_id: str):
-    """
-    Killswitch : stoppe l'agent, purge la DB et la mémoire pour ce node.
-    Retourne un résumé des actions effectuées.
-    """
+def killswitch_node(node_id: str, session_id: str = Depends(get_session)):
     actions = []
+    
+    internal_id = f"{session_id}_{node_id}"
 
-    # ── Étape 1 : Terminer le sous-processus agent (si déployé via /deploy) ──
-    proc = _deployed_processes.pop(node_id, None)
+    proc = _deployed_processes.pop(internal_id, None)
     if proc:
         if proc.poll() is None:
             proc.terminate()
@@ -585,15 +582,18 @@ def killswitch_node(node_id: str):
             else:
                 actions.append(f"agent_process: TERMINATED (PID {proc.pid})")
         else:
-            actions.append(f"agent_process: already_stopped (PID {proc.pid}, exit code {proc.returncode})")
+            actions.append(f"agent_process: already_stopped (PID {proc.pid})")
     else:
-        actions.append("agent_process: not_managed (external agent or already stopped)")
+        actions.append("agent_process: not_found (already stopped or not yours)")
 
-    # ── Étape 2 : Purger la base de données ──────────────────────────────────
+    # ── Étape 2 : Purger la base de données de CETTE session ─────────
     db = SessionLocal()
     deleted_rows = 0
     try:
-        deleted_rows = db.query(MetricLog).filter(MetricLog.node_id == node_id).delete()
+        deleted_rows = db.query(MetricLog).filter(
+            MetricLog.node_id == node_id,
+            MetricLog.session_id == session_id
+        ).delete()
         db.commit()
         actions.append(f"database: {deleted_rows} records deleted")
     except Exception as e:
@@ -602,24 +602,19 @@ def killswitch_node(node_id: str):
     finally:
         db.close()
 
-    # ── Étape 3 : Effacer la fenêtre glissante en mémoire ────────────────────
-    if node_id in _windows:
-        _windows.pop(node_id)
+    # ── Étape 3 : Effacer la fenêtre glissante en mémoire ────────────
+    if internal_id in _windows:
+        _windows.pop(internal_id)
         actions.append("memory_window: cleared")
-    else:
-        actions.append("memory_window: not_found (already clean)")
 
-    print(f"🛑 Killswitch activé pour node '{node_id}' | actions : {actions}")
+    print(f"🛑 Killswitch activé pour '{internal_id}' | actions : {actions}")
 
     return {
         "status":       "terminated",
         "node_id":      node_id,
         "deleted_rows": deleted_rows,
-        "actions":      actions,
-        "message":      f"Node '{node_id}' has been fully purged from the system.",
-        "timestamp":    datetime.datetime.now().isoformat(),
+        "actions":      actions
     }
-
 
 # ══════════════════════════════════════════════
 # STATS POLLING  — GET /stats/{node_id}
