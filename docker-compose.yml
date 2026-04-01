@@ -26,16 +26,19 @@ services:
       DATABASE_URL: ${DATABASE_URL}
 
   frontend:
-    build: ./frontend
-    container_name: dashboard-ui
-    ports:
-      - "80:3000"
-    depends_on:
-      - backend
-    environment:
-      - NEXT_PUBLIC_API_URL=http://141.253.103.112:8000
-      - HOST=0.0.0.0
-      - PORT=3000
+    build:
+      context: ./frontend
+      args:
+        - NEXT_PUBLIC_API_URL=http://141.253.103.112:8000
+      container_name: dashboard-ui
+      ports:
+        - "80:3000"
+      depends_on:
+        - backend
+      environment:
+        - NEXT_PUBLIC_API_URL=http://141.253.103.112:8000
+        - HOST=0.0.0.0
+        - PORT=3000
 
 volumes:
   postgres_data:
