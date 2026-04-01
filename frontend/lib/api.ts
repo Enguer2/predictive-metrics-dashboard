@@ -76,12 +76,9 @@ export interface KillswitchResult {
 
 export function getSessionId(): string {
   if (typeof window === "undefined") return "server_render";
-  let sid = sessionStorage.getItem("watchman_session_id");
-  if (!sid) {
-    sid = crypto.randomUUID();
-    sessionStorage.setItem("watchman_session_id", sid);
-  }
-  return sid;
+  
+  const sid = sessionStorage.getItem("watchman_session_id");
+  return sid || "anonymous"; 
 }
 
 // Mise à jour du helper interne "get"
@@ -134,6 +131,9 @@ export async function killNode(nodeId: string): Promise<KillswitchResult | null>
     const res = await fetch(`${API_URL}/api/nodes/${encodeURIComponent(nodeId)}`, {
       method: "DELETE",
       cache:  "no-store",
+      headers: {
+        "X-Session-ID": getSessionId()
+      }
     });
     if (!res.ok) return null;
     return (await res.json()) as KillswitchResult;
