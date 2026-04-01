@@ -29,7 +29,7 @@ services:
     build: ./frontend
     container_name: dashboard-ui
     ports:
-      - "3000:3000"
+      - "80:3000"
     depends_on:
       - backend
     environment:
