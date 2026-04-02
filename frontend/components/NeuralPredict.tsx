@@ -16,7 +16,7 @@ interface TooltipState {
 }
 
 export default function NeuralPredict({ metrics, prediction, history }: NeuralPredictProps) {
-  const [isMounted, setIsMounted] = useState(false);
+  const [isMounted, setIsMounted] = useState(true);
   const [tooltip, setTooltip] = useState<TooltipState>({ visible: false, x: 0, y: 0, data: null });
   const chartRef = useRef<HTMLDivElement>(null);
 

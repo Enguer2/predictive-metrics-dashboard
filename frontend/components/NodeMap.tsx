@@ -18,19 +18,21 @@ export default function NodeMap({ activeNode, onSelectNode }: NodeMapProps) {
   const [nodes, setNodes] = useState<NodeStatus[]>([]);
 
   useEffect(() => {
-    const fetch = async () => {
-      const data = await getAllNodesStatus();
-      if (data.length) setNodes(data);
+    const loadNodes = async () => {
+      const data = await getAllNodesStatus(); 
+      if (data && data.length > 0) {
+        setNodes(data);
+      }
     };
-    fetch();
-    const id = setInterval(fetch, 5000);
+    loadNodes();
+
+    const id = setInterval(loadNodes, 5000);
     return () => clearInterval(id);
   }, []);
 
   // ── 1. GESTION DES POSITIONS (Anti-Superposition) ──
   const getProjectedNodes = () => {
     return nodes.map((node, index) => {
-      // Si c'est un noeud physique avec de vraies coordonnées
       if (node.lat !== 0 || node.lon !== 0) {
         return {
           ...node,
@@ -41,10 +43,7 @@ export default function NodeMap({ activeNode, onSelectNode }: NodeMapProps) {
       
       const centerX = 150;
       const centerY = 110;
-      
-      // Calcul d'un angle unique basé sur sa position dans la liste
       const angle = (index / nodes.length) * Math.PI * 2;
-      // Rayon variable pour éviter un cercle parfait et donner un effet "nuage/toile"
       const radius = 45 + (index % 4) * 15; 
       
       return {

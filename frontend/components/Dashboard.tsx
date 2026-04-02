@@ -43,37 +43,31 @@ export default function Dashboard({ activeNode, onAlertChange, onSelectNode }: D
 
   // ── 2. Rechargement de l'historique quand le node actif change ─────────────
   useEffect(() => {
-    if (apiStatus !== "online") return;
-    if (loadedNodeRef.current === activeNode) return;
+  if (apiStatus !== "online") return;
+  setMetrics({ cpu: 0, ram: 0, network: 0 });
+  setLastPred(null);
+  setHistory([]);
 
-    loadedNodeRef.current = activeNode;
-    setMetrics({ cpu: 0, ram: 0, network: 0 });
-    setLastPred(null);
-
-    getHistory(activeNode).then(hist => {
-      if (!hist?.length) { setHistory([]); return; }
-      setHistory(hist);
-      const last = hist[hist.length - 1];
-      if (last) setMetrics({ cpu: last.cpu, ram: last.ram, network: last.network ?? 0 });
-    });
-  }, [apiStatus, activeNode]);
+  getHistory(activeNode).then(hist => {
+    if (!hist?.length) return;
+    setHistory(hist);
+    const last = hist[hist.length - 1];
+    if (last) setMetrics({ cpu: last.cpu, ram: last.ram, network: last.network ?? 0 });
+  });
+}, [apiStatus, activeNode]);
 
   // ── 3. Boucle de polling temps réel ────────────────────────────────────────
   useEffect(() => {
-    if (apiStatus !== "online") return;
+  if (apiStatus !== "online") return;
 
-    const tick = async () => {
-      const data = await getLiveSystemStats(activeNode);
-      if (!data) return;
-
-      setMetrics({ cpu: data.cpu, ram: data.ram, network: data.network ?? 0 });
-      setLastPred(data);
-
-      // Remonte l'alerte courante à la Sidebar via le callback
-      onAlertChange?.(data.node_id, data.alert_level);
-
-      setHistory(prev => [
-        ...prev.slice(-49),
+  const tick = async () => {
+    const data = await getLiveSystemStats(activeNode);
+    if (!data) return;
+    setMetrics({ cpu: data.cpu, ram: data.ram, network: data.network ?? 0 });
+    setLastPred(data);
+    onAlertChange?.(data.node_id, data.alert_level);
+    setHistory(prev => [
+      ...prev.slice(-49),
         {
           node_id:       data.node_id,
           cpu:           data.cpu,
@@ -88,11 +82,12 @@ export default function Dashboard({ activeNode, onAlertChange, onSelectNode }: D
           timestamp:     data.timestamp,
         },
       ]);
-    };
+  };
 
-    const id = setInterval(tick, 2000);
-    return () => clearInterval(id);
-  }, [apiStatus, activeNode, onAlertChange]);
+  tick();
+  const id = setInterval(tick, 2000);
+  return () => clearInterval(id);
+}, [apiStatus, activeNode, onAlertChange]);
 
   // ── Dérivés ────────────────────────────────────────────────────────────────
   const statusColor = apiStatus === "online" ? "#22c55e" : "#ef4444";
