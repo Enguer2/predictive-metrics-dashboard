@@ -2,10 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { BrainCircuit, ShieldAlert, Terminal, Zap, Radio, RefreshCw } from "lucide-react";
-import { getNodes, type NodeMeta, type AlertLevel } from "@/lib/api";
+import { getNodes, killNode, type NodeMeta, type AlertLevel } from "@/lib/api";
 import DeployModal from "@/components/DeployModal";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,17 +40,16 @@ export default function Sidebar({ activeNode, onSelectNode, nodeAlerts = {}, onN
   const [killResult,  setKillResult]  = useState<{ nodeId: string; success: boolean; msg: string } | null>(null);
 
   // ── Discovery loop ─────────────────────────────────────────────────────────
+  // FIX 1 : Remplacement complet de la liste (au lieu d'un append-only)
+  // afin que les nodes supprimés via killswitch disparaissent réellement
+  // du sidebar lors du prochain poll, sans être réinjectés.
   const discover = useCallback(async () => {
     setPolling(true);
     const fresh = await getNodes();
-    if (fresh.length > 0) {
-      setNodes(prev => {
-        const known = new Set(prev.map(n => n.node_id));
-        const added = fresh.filter(n => !known.has(n.node_id));
-        return added.length ? [...prev, ...added] : prev;
-      });
-      setRefresh(new Date());
-    }
+    // On remplace toujours la liste complète — y compris quand elle est vide
+    // après un killswitch — pour refléter fidèlement l'état réel du backend.
+    setNodes(fresh);
+    setRefresh(new Date());
     setPolling(false);
   }, []);
 
@@ -63,48 +60,48 @@ export default function Sidebar({ activeNode, onSelectNode, nodeAlerts = {}, onN
   }, [discover]);
 
   // ── Killswitch logic ───────────────────────────────────────────────────────
+  // FIX 2 : Utilisation de killNode() depuis api.ts au lieu d'un fetch brut,
+  // ce qui garantit l'envoi du header X-Session-ID requis par le backend
+  // pour filtrer et purger uniquement les données de la session courante.
+  // FIX 1 (suite) : Suppression optimiste immédiate de la node côté UI avant
+  // la réponse serveur, pour éviter qu'un tick de discover() la réinsère
+  // pendant la durée de la requête DELETE.
   const handleKillswitch = async () => {
     const target = killTarget ?? activeNode;
     setKillTarget(null);
     setKilling(target);
     setKillResult(null);
 
-    try {
-      const res = await fetch(`${API_URL}/api/nodes/${encodeURIComponent(target)}`, {
-        method: "DELETE",
+    // Suppression optimiste immédiate : on retire la node de la liste locale
+    // avant même que le backend réponde, pour qu'un tick discover() intermédiaire
+    // ne la réintroduise pas pendant la durée de l'appel réseau.
+    setNodes(prev => prev.filter(n => n.node_id !== target));
+
+    // killNode() envoie le header X-Session-ID via getSessionId() (cf. api.ts)
+    const data = await killNode(target);
+
+    if (data) {
+      setKillResult({
+        nodeId:  target,
+        success: true,
+        msg:     `${data.deleted_rows} records purged. Agent stopped.`,
       });
-      const data = await res.json();
-
-      if (res.ok) {
-        // Remove node from local list
-        setNodes(prev => prev.filter(n => n.node_id !== target));
-
-        setKillResult({
-          nodeId:  target,
-          success: true,
-          msg:     `${data.deleted_rows} records purged. Agent stopped.`,
-        });
-
-        // Notify parent to switch node if killed node was active
-        onNodeKilled?.(target);
-      } else {
-        setKillResult({
-          nodeId:  target,
-          success: false,
-          msg:     data.detail ?? "Killswitch failed.",
-        });
-      }
-    } catch {
+      // Notifie le parent pour changer de node active si besoin
+      onNodeKilled?.(target);
+    } else {
       setKillResult({
         nodeId:  target,
         success: false,
-        msg:     "Cannot reach backend.",
+        msg:     "Killswitch failed. Check backend connection.",
       });
-    } finally {
-      setKilling(null);
-      // Auto-dismiss result after 4s
-      setTimeout(() => setKillResult(null), 4000);
+      // Échec : on resynchronise la liste réelle depuis le backend
+      const recovered = await getNodes();
+      setNodes(recovered);
     }
+
+    setKilling(null);
+    // Auto-dismiss du toast après 4s
+    setTimeout(() => setKillResult(null), 4000);
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────

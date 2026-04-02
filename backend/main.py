@@ -120,6 +120,13 @@ _windows: dict[str, deque] = {}   # {node_id: deque[(cpu, ram, net)]}
 # Registry des processus agents déployés localement {node_id: subprocess.Popen}
 _deployed_processes: dict[str, subprocess.Popen] = {}
 
+# FIX 3 : Blacklist des nodes tués {internal_id: timestamp_of_kill}
+# Permet de rejeter les ingestions POST /api/report d'un agent externe
+# qui continue d'envoyer des données après un killswitch, empêchant ainsi
+# la node de réapparaître dans GET /api/nodes via la DB.
+_killed_nodes: dict[str, float] = {}
+KILL_GRACE_PERIOD = 60.0  # secondes pendant lesquelles on ignore les nouveaux rapports
+
 CPU_DANGER   = 85.0
 RAM_DANGER   = 85.0
 RAM_CRITICAL = 95.0
@@ -298,6 +305,15 @@ def read_root():
 # ══════════════════════════════════════════════
 @app.post("/api/report/{node_id}")
 def ingest_report(node_id: str, payload: MetricsPayload, x_session_id: str = Header("anonymous")):
+    internal_id = f"{x_session_id}_{node_id}"
+    killed_at   = _killed_nodes.get(internal_id)
+    if killed_at is not None:
+        elapsed = time.time() - killed_at
+        if elapsed < KILL_GRACE_PERIOD:
+            return {"status": "rejected", "reason": "node_killed", "retry_in": round(KILL_GRACE_PERIOD - elapsed)}
+        else:
+            del _killed_nodes[internal_id]
+
     return process_metrics(x_session_id, node_id, payload.cpu, payload.ram, payload.network)
 
 
@@ -380,7 +396,6 @@ def get_stats(node_id: str, session_id: str = Depends(get_session)):
         "timestamp":       log.timestamp.strftime("%H:%M:%S") if log.timestamp else "",
     }
 
-# ── Compat alias (ancienne route /nodes) ─────────────────────────────────────
 @app.get("/nodes")
 def list_nodes_compat():
     return list_active_nodes()
@@ -445,15 +460,6 @@ def list_scenarios():
 
 # ══════════════════════════════════════════════
 # DEPLOY NODE  — POST /api/nodes/deploy
-# Provisionne et lance un agent watchman local à la volée.
-#
-# Architecture "Active" : le backend orchestre lui-même le lancement
-# d'un sous-processus agent, simulant un provisionnement IaC.
-#
-# En production cloud, ce endpoint pourrait :
-#   - Appeler l'API DigitalOcean/AWS pour spawner un container Docker
-#   - Exécuter un playbook Ansible via subprocess
-#   - Déclencher un pipeline CI/CD via webhook
 # ══════════════════════════════════════════════
 @app.post("/api/nodes/deploy", status_code=201)
 def deploy_node(payload: DeployPayload, session_id: str = Depends(get_session)):
@@ -529,19 +535,6 @@ def deploy_node(payload: DeployPayload, session_id: str = Depends(get_session)):
 
 # ── Compat alias nodes/status ────────────────────────────────────────────────
 
-
-# ══════════════════════════════════════════════
-# [NEW] KILLSWITCH  — DELETE /api/nodes/{node_id}
-#
-# Remédiation complète en 3 étapes :
-#   1. Tue le sous-processus agent local s'il existe
-#   2. Purge toutes les entrées DB du node
-#   3. Efface la fenêtre glissante en mémoire
-#
-# Niveau 1 implémenté (purge locale).
-# Pour un Niveau 2 "Pro" (signal distant), implémenter une WebSocket
-# ou un endpoint /shutdown sur l'agent distant.
-# ══════════════════════════════════════════════
 @app.delete("/api/nodes/{node_id}")
 def killswitch_node(node_id: str, session_id: str = Depends(get_session)):
     actions = []
@@ -564,7 +557,6 @@ def killswitch_node(node_id: str, session_id: str = Depends(get_session)):
     else:
         actions.append("agent_process: not_found (already stopped or not yours)")
 
-    # ── Étape 2 : Purger la base de données de CETTE session ─────────
     db = SessionLocal()
     deleted_rows = 0
     try:
@@ -580,10 +572,12 @@ def killswitch_node(node_id: str, session_id: str = Depends(get_session)):
     finally:
         db.close()
 
-    # ── Étape 3 : Effacer la fenêtre glissante en mémoire ────────────
     if internal_id in _windows:
         _windows.pop(internal_id)
         actions.append("memory_window: cleared")
+
+    _killed_nodes[internal_id] = time.time()
+    actions.append(f"blacklist: node added (grace period {KILL_GRACE_PERIOD}s)")
 
     print(f"🛑 Killswitch activé pour '{internal_id}' | actions : {actions}")
 
@@ -594,7 +588,6 @@ def killswitch_node(node_id: str, session_id: str = Depends(get_session)):
         "actions":      actions
     }
 
-# ── Compat alias stats ───────────────────────────────────────────────────────
 
 @app.get("/stats")
 def get_stats_compat():
