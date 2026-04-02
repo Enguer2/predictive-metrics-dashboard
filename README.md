@@ -5,13 +5,23 @@
 ---
 [Accéder au Dashboard WATCHMAN_OS](https://dashboard-enguer2.duckdns.org/)
 
-## Aperçu
+## 📸 Aperçu de l'application
 
 <p align="center">
-  <img src="assets/img_1.png" alt="" width="850">
-  <br>
-    <img src="assets/img_2.png" alt="" width="400">
-  <br>
+  <table border="0" cellspacing="0" cellpadding="0" align="center">
+    <tr>
+      <td align="center" valign="top">
+        <img src="assets/img_1.png" alt="Vue globale du Dashboard" width="450" style="margin-right: 10px; border: 1px solid #ddd; border-radius: 4px;">
+        <br>
+        <em>Vue globale multi-clusters</em>
+      </td>
+      <td align="center" valign="top">
+        <img src="assets/img_2.png" alt="Détail d'une alerte IA" width="400" style="border: 1px solid #ddd; border-radius: 4px;">
+        <br>
+        <em>Détail d'une alerte critique</em>
+      </td>
+    </tr>
+  </table>
 </p>
 
 ## Sommaire
@@ -293,10 +303,20 @@ Pour une description détaillée de l'architecture IA (choix du modèle, feature
 ## Dashboard Preview
 
 <p align="center">
-  <img src="assets/img_1.png" alt="" width="850">
-  <br>
-    <img src="assets/img_2.png" alt="" width="400">
-  <br>
+  <table border="0" cellspacing="0" cellpadding="0" align="center">
+    <tr>
+      <td align="center" valign="top">
+        <img src="assets/img_1.png" alt="Dashboard Overview" width="450" style="margin-right: 10px; border: 1px solid #ddd; border-radius: 4px;">
+        <br>
+        <em>Global multi-cluster view</em>
+      </td>
+      <td align="center" valign="top">
+        <img src="assets/img_2.png" alt="AI Alert Details" width="400" style="border: 1px solid #ddd; border-radius: 4px;">
+        <br>
+        <em>Details of a critical alert</em>
+      </td>
+    </tr>
+  </table>
 </p>
 
 
