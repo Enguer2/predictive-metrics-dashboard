@@ -20,7 +20,7 @@ Ce document décrit le pipeline de Machine Learning utilisé pour détecter des 
 
 ## 1. Vue d'ensemble du pipeline
 
-![Architecture Analytique](assets/svg_architecture_fr.svg)
+<img src="../assets/svg_architecture_fr.svg" alt="Architecture du projet" width="600">
 
 ---
 
