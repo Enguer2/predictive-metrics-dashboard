@@ -20,7 +20,7 @@ Ce document décrit le pipeline de Machine Learning utilisé pour détecter des 
 
 ## 1. Vue d'ensemble du pipeline
 
-<img src="../assets/svg_architecture_fr.svg" alt="Architecture du projet" width="600">
+<img src="../assets/svg_architecture_fr.svg" alt="Architecture du projet" width="900">
 
 ---
 
@@ -195,7 +195,7 @@ This document describes the Machine Learning pipeline used to detect abnormal be
 
 ## 1. Pipeline Overview
 
-![Analytical Architecture](assets/svg_architecture_en.svg)
+<img src="../assets/svg_architecture_en.svg" alt="Analytical Architecture" width="900">
 
 ---
 
