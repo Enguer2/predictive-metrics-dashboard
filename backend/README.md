@@ -139,7 +139,12 @@ $$Risk_{IA} = (0.15 - IF\_Score) \times 400$$
 
 **Bonus de saturation RAM (coupe-circuit) :**
 
-$$Bonus_{RAM} = \begin{cases} \left(\dfrac{RAM_t - 95}{100 - 95}\right) \times 45 & \text{si } RAM_t \geq 95\%\ \text{(max +45 pts)} \\ \left(\dfrac{RAM_t - 85}{95 - 85}\right) \times 20 & \text{si } RAM_t \geq 85\%\ \text{(max +20 pts)} \end{cases}$$
+$$
+Bonus_{RAM} = \begin{cases} 
+\left(\dfrac{RAM_t - 95}{100 - 95}\right) \times 45 & \text{si } RAM_t \geq 95\% \text{ (max +45 pts)} \\\\ 
+\left(\dfrac{RAM_t - 85}{95 - 85}\right) \times 20 & \text{si } RAM_t \geq 85\% \text{ (max +20 pts)} 
+\end{cases}
+$$
 
 **Bonus de saturation CPU :**
 
@@ -314,7 +319,12 @@ $$Risk_{AI} = (0.15 - IF\_Score) \times 400$$
 
 **RAM saturation bonus (circuit breaker):**
 
-$$Bonus_{RAM} = \begin{cases} \left(\frac{RAM_t - 95}{100 - 95}\right) \times 45 & \text{if } RAM_t \geq 95\% \text{ (max +45 pts)} \\ \left(\frac{RAM_t - 85}{95 - 85}\right) \times 20 & \text{if } RAM_t \geq 85\% \text{ (max +20 pts)} \end{cases}$$
+$$
+Bonus_{RAM} = \begin{cases} 
+\left(\dfrac{RAM_t - 95}{100 - 95}\right) \times 45 & \text{if } RAM_t \geq 95\% \text{ (max +45 pts)} \\\\ 
+\left(\dfrac{RAM_t - 85}{95 - 85}\right) \times 20 & \text{if } RAM_t \geq 85\% \text{ (max +20 pts)} 
+\end{cases}
+$$
 
 **CPU saturation bonus:**
 

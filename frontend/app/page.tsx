@@ -44,12 +44,10 @@ export default function Home() {
   // ── Fonction pour lancer une nouvelle session ──
   const handleStartSession = () => {
     try {
-      // Plan A : HTTPS / Localhost
       let newSessionId;
       if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         newSessionId = crypto.randomUUID();
       } else {
-        // Plan B : HTTP simple (Générateur aléatoire manuel)
         newSessionId = 'session_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
       }
       
