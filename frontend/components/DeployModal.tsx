@@ -103,6 +103,7 @@ export default function DeployModal({ onClose, onDeployed }: DeployModalProps) {
           scenario_file: selected.path,
           interval:      parseFloat(interval) || 2.0,
           loop,
+          backend_url:   API_URL
         }),
       });
       const data = await res.json();

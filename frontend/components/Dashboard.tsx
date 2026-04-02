@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   checkBackendStatus,
   getLiveSystemStats,
@@ -17,11 +17,8 @@ import Telemetry     from "./Telemetry";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface DashboardProps {
-  /** Node courant sélectionné depuis la Sidebar */
   activeNode:    string;
-  /** Callback permettant à la Sidebar de connaître l'alerte de chaque node */
   onAlertChange?: (nodeId: string, alert: AlertLevel) => void;
-  /** Pour le switch de node depuis la NodeMap */
   onSelectNode?: (nodeId: string) => void;
 }
 
@@ -33,6 +30,13 @@ export default function Dashboard({ activeNode, onAlertChange, onSelectNode }: D
   const [metrics, setMetrics]         = useState({ cpu: 0, ram: 0, network: 0 });
   const [history, setHistory]         = useState<HistoryEntry[]>([]);
 
+  // ── FIX : Stabilise onAlertChange dans un ref pour éviter de recréer
+  // l'intervalle de polling à chaque re-render du parent causé par setNodeAlerts
+  const onAlertChangeRef = useRef(onAlertChange);
+  useEffect(() => {
+    onAlertChangeRef.current = onAlertChange;
+  }, [onAlertChange]);
+
   // ── 1. Healthcheck au démarrage ────────────────────────────────────────────
   useEffect(() => {
     checkBackendStatus().then(({ status }) =>
@@ -41,11 +45,9 @@ export default function Dashboard({ activeNode, onAlertChange, onSelectNode }: D
   }, []);
 
   // ── 2. Reset + rechargement de l'historique quand le node actif change ─────
-  // FIX : suppression du loadedNodeRef qui bloquait la réinitialisation correcte
   useEffect(() => {
     if (apiStatus !== "online") return;
 
-    // Reset immédiat pour éviter d'afficher les données de l'ancien node
     setMetrics({ cpu: 0, ram: 0, network: 0 });
     setLastPred(null);
     setHistory([]);
@@ -59,8 +61,8 @@ export default function Dashboard({ activeNode, onAlertChange, onSelectNode }: D
   }, [apiStatus, activeNode]);
 
   // ── 3. Boucle de polling temps réel ────────────────────────────────────────
-  // FIX : tick() appelé immédiatement pour éviter les 2s de blanc au démarrage
-  // et à chaque switch de node
+  // FIX : onAlertChange retiré des dépendances — on passe par onAlertChangeRef
+  // pour éviter que chaque appel à setNodeAlerts (parent) ne détruise l'intervalle
   useEffect(() => {
     if (apiStatus !== "online") return;
 
@@ -71,7 +73,8 @@ export default function Dashboard({ activeNode, onAlertChange, onSelectNode }: D
       setMetrics({ cpu: data.cpu, ram: data.ram, network: data.network ?? 0 });
       setLastPred(data);
 
-      onAlertChange?.(data.node_id, data.alert_level);
+      // Appel via le ref : toujours la version la plus récente, sans être une dépendance
+      onAlertChangeRef.current?.(data.node_id, data.alert_level);
 
       setHistory(prev => [
         ...prev.slice(-49),
@@ -94,7 +97,10 @@ export default function Dashboard({ activeNode, onAlertChange, onSelectNode }: D
     tick();
     const id = setInterval(tick, 2000);
     return () => clearInterval(id);
-  }, [apiStatus, activeNode, onAlertChange]);
+
+    // onAlertChange intentionnellement absent des dépendances — géré via ref
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiStatus, activeNode]);
 
   // ── Dérivés ────────────────────────────────────────────────────────────────
   const statusColor = apiStatus === "online" ? "#22c55e" : "#ef4444";
