@@ -18,7 +18,7 @@
       <td align="center" valign="top">
         <img src="assets/img_2.png" alt="Détail d'une alerte IA" width="400" style="border: 1px solid #ddd; border-radius: 4px;">
         <br>
-        <em>Détail d'une alerte critique</em>
+        <em>Interface de création de node</em>
       </td>
     </tr>
   </table>
@@ -313,7 +313,7 @@ Pour une description détaillée de l'architecture IA (choix du modèle, feature
       <td align="center" valign="top">
         <img src="assets/img_2.png" alt="AI Alert Details" width="400" style="border: 1px solid #ddd; border-radius: 4px;">
         <br>
-        <em>Details of a critical alert</em>
+        <em>Details of creating a node</em>
       </td>
     </tr>
   </table>
