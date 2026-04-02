@@ -10,7 +10,7 @@
 <p align="center">
   <img src="assets/img_1.png" alt="" width="850">
   <br>
-    <img src="assets/img_2.png" alt="" width="850">
+    <img src="assets/img_2.png" alt="" width="400">
   <br>
 </p>
 
@@ -295,7 +295,7 @@ Pour une description détaillée de l'architecture IA (choix du modèle, feature
 <p align="center">
   <img src="assets/img_1.png" alt="" width="850">
   <br>
-    <img src="assets/img_2.png" alt="" width="850">
+    <img src="assets/img_2.png" alt="" width="400">
   <br>
 </p>
 
