@@ -339,7 +339,7 @@ def get_all_nodes_status(session_id: str = Depends(get_session)):
         db.close()
     return result
 
-# Remplacer la route /stats/{node_id}
+# Route /stats/{node_id} — filtrée par session, retour complet
 @app.get("/stats/{node_id}")
 def get_stats(node_id: str, session_id: str = Depends(get_session)):
     db = SessionLocal()
@@ -347,15 +347,38 @@ def get_stats(node_id: str, session_id: str = Depends(get_session)):
         log = (
             db.query(MetricLog)
               .filter(MetricLog.node_id == node_id)
-              .filter(MetricLog.session_id == session_id) # <-- Filtre ajouté
+              .filter(MetricLog.session_id == session_id)
               .order_by(MetricLog.id.desc())
               .first()
         )
     finally:
         db.close()
-    
+
     if not log:
-        return {"node_id": node_id, "cpu": 0.0, "ram": 0.0, "network": 0.0} # (tronqué pour concision, remet ton dict par défaut)
+        return {
+            "node_id": node_id, "cpu": 0.0, "ram": 0.0, "network": 0.0,
+            "cpu_delta": 0.0, "ram_delta": 0.0, "combined_load": 0.0,
+            "is_anomaly": False, "prediction_code": 1,
+            "ai_risk_score": 0, "alert_level": "OK",
+            "raw_if_score": 0.0,
+            "timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
+        }
+
+    return {
+        "node_id":         log.node_id,
+        "cpu":             log.cpu,
+        "ram":             log.ram,
+        "network":         log.network,
+        "cpu_delta":       log.cpu_delta,
+        "ram_delta":       log.ram_delta,
+        "combined_load":   log.combined_load,
+        "is_anomaly":      log.is_anomaly,
+        "prediction_code": -1 if log.is_anomaly else 1,
+        "ai_risk_score":   log.ai_risk_score,
+        "alert_level":     log.alert_level,
+        "raw_if_score":    0.0,
+        "timestamp":       log.timestamp.strftime("%H:%M:%S") if log.timestamp else "",
+    }
 
 # ── Compat alias (ancienne route /nodes) ─────────────────────────────────────
 @app.get("/nodes")
@@ -504,52 +527,7 @@ def deploy_node(payload: DeployPayload, session_id: str = Depends(get_session)):
     }
 
 
-# ══════════════════════════════════════════════
-# NODE STATUS MAP  — GET /api/nodes/status
-# ══════════════════════════════════════════════
-@app.get("/api/nodes/status")
-def get_all_nodes_status():
-    node_ids = get_active_nodes_from_db()
-    result   = []
-    db       = SessionLocal()
-    try:
-        for node_id in node_ids:
-            log = (
-                db.query(MetricLog)
-                  .filter(MetricLog.node_id == node_id)
-                  .order_by(MetricLog.id.desc())
-                  .first()
-            )
-            meta = get_node_meta(node_id)
-            if log:
-                result.append({
-                    "node_id":       node_id,
-                    "label":         meta["label"],
-                    "lat":           meta["lat"],
-                    "lon":           meta["lon"],
-                    "cpu":           log.cpu,
-                    "ram":           log.ram,
-                    "network":       log.network,
-                    "alert_level":   log.alert_level,
-                    "ai_risk_score": log.ai_risk_score,
-                    "timestamp":     log.timestamp.strftime("%H:%M:%S") if log.timestamp else None,
-                })
-            else:
-                result.append({
-                    "node_id": node_id, "label": meta["label"],
-                    "lat": meta["lat"], "lon": meta["lon"],
-                    "cpu": 0.0, "ram": 0.0, "network": 0.0,
-                    "alert_level": "OK", "ai_risk_score": 0, "timestamp": None,
-                })
-    finally:
-        db.close()
-    return result
-
-
-# ── Compat alias ─────────────────────────────────────────────────────────────
-@app.get("/nodes/status")
-def nodes_status_compat():
-    return get_all_nodes_status()
+# ── Compat alias nodes/status ────────────────────────────────────────────────
 
 
 # ══════════════════════════════════════════════
@@ -616,47 +594,7 @@ def killswitch_node(node_id: str, session_id: str = Depends(get_session)):
         "actions":      actions
     }
 
-# ══════════════════════════════════════════════
-# STATS POLLING  — GET /stats/{node_id}
-# ══════════════════════════════════════════════
-@app.get("/stats/{node_id}")
-def get_stats(node_id: str):
-    db  = SessionLocal()
-    try:
-        log = (
-            db.query(MetricLog)
-              .filter(MetricLog.node_id == node_id)
-              .order_by(MetricLog.id.desc())
-              .first()
-        )
-    finally:
-        db.close()
-
-    if not log:
-        return {
-            "node_id": node_id, "cpu": 0.0, "ram": 0.0, "network": 0.0,
-            "cpu_delta": 0.0, "ram_delta": 0.0, "combined_load": 0.0,
-            "is_anomaly": False, "prediction_code": 1,
-            "ai_risk_score": 0, "alert_level": "OK",
-            "raw_if_score": 0.0,
-            "timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
-        }
-
-    return {
-        "node_id":         log.node_id,
-        "cpu":             log.cpu,
-        "ram":             log.ram,
-        "network":         log.network,
-        "cpu_delta":       log.cpu_delta,
-        "ram_delta":       log.ram_delta,
-        "combined_load":   log.combined_load,
-        "is_anomaly":      log.is_anomaly,
-        "prediction_code": -1 if log.is_anomaly else 1,
-        "ai_risk_score":   log.ai_risk_score,
-        "alert_level":     log.alert_level,
-        "raw_if_score":    0.0,
-        "timestamp":       log.timestamp.strftime("%H:%M:%S") if log.timestamp else "",
-    }
+# ── Compat alias stats ───────────────────────────────────────────────────────
 
 @app.get("/stats")
 def get_stats_compat():
