@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   checkBackendStatus,
   getLiveSystemStats,
@@ -18,7 +18,7 @@ import Telemetry     from "./Telemetry";
 
 interface DashboardProps {
   /** Node courant sélectionné depuis la Sidebar */
-  activeNode:   string;
+  activeNode:    string;
   /** Callback permettant à la Sidebar de connaître l'alerte de chaque node */
   onAlertChange?: (nodeId: string, alert: AlertLevel) => void;
   /** Pour le switch de node depuis la NodeMap */
@@ -28,46 +28,53 @@ interface DashboardProps {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Dashboard({ activeNode, onAlertChange, onSelectNode }: DashboardProps) {
-  const [apiStatus, setApiStatus]     = useState<"connecting" | "online" | "offline">("connecting");
+  const [apiStatus, setApiStatus] = useState<"connecting" | "online" | "offline">("connecting");
   const [lastPrediction, setLastPred] = useState<StatsPayload | null>(null);
   const [metrics, setMetrics]         = useState({ cpu: 0, ram: 0, network: 0 });
   const [history, setHistory]         = useState<HistoryEntry[]>([]);
 
-  // Track the node for which data is currently loaded (to detect switches)
-  const loadedNodeRef = useRef<string>("");
-
   // ── 1. Healthcheck au démarrage ────────────────────────────────────────────
   useEffect(() => {
-    checkBackendStatus().then(({ status }) => setApiStatus(status === "online" ? "online" : "offline"));
+    checkBackendStatus().then(({ status }) =>
+      setApiStatus(status === "online" ? "online" : "offline")
+    );
   }, []);
 
-  // ── 2. Rechargement de l'historique quand le node actif change ─────────────
+  // ── 2. Reset + rechargement de l'historique quand le node actif change ─────
+  // FIX : suppression du loadedNodeRef qui bloquait la réinitialisation correcte
   useEffect(() => {
-  if (apiStatus !== "online") return;
-  setMetrics({ cpu: 0, ram: 0, network: 0 });
-  setLastPred(null);
-  setHistory([]);
+    if (apiStatus !== "online") return;
 
-  getHistory(activeNode).then(hist => {
-    if (!hist?.length) return;
-    setHistory(hist);
-    const last = hist[hist.length - 1];
-    if (last) setMetrics({ cpu: last.cpu, ram: last.ram, network: last.network ?? 0 });
-  });
-}, [apiStatus, activeNode]);
+    // Reset immédiat pour éviter d'afficher les données de l'ancien node
+    setMetrics({ cpu: 0, ram: 0, network: 0 });
+    setLastPred(null);
+    setHistory([]);
+
+    getHistory(activeNode).then(hist => {
+      if (!hist?.length) return;
+      setHistory(hist);
+      const last = hist[hist.length - 1];
+      if (last) setMetrics({ cpu: last.cpu, ram: last.ram, network: last.network ?? 0 });
+    });
+  }, [apiStatus, activeNode]);
 
   // ── 3. Boucle de polling temps réel ────────────────────────────────────────
+  // FIX : tick() appelé immédiatement pour éviter les 2s de blanc au démarrage
+  // et à chaque switch de node
   useEffect(() => {
-  if (apiStatus !== "online") return;
+    if (apiStatus !== "online") return;
 
-  const tick = async () => {
-    const data = await getLiveSystemStats(activeNode);
-    if (!data) return;
-    setMetrics({ cpu: data.cpu, ram: data.ram, network: data.network ?? 0 });
-    setLastPred(data);
-    onAlertChange?.(data.node_id, data.alert_level);
-    setHistory(prev => [
-      ...prev.slice(-49),
+    const tick = async () => {
+      const data = await getLiveSystemStats(activeNode);
+      if (!data) return;
+
+      setMetrics({ cpu: data.cpu, ram: data.ram, network: data.network ?? 0 });
+      setLastPred(data);
+
+      onAlertChange?.(data.node_id, data.alert_level);
+
+      setHistory(prev => [
+        ...prev.slice(-49),
         {
           node_id:       data.node_id,
           cpu:           data.cpu,
@@ -82,12 +89,12 @@ export default function Dashboard({ activeNode, onAlertChange, onSelectNode }: D
           timestamp:     data.timestamp,
         },
       ]);
-  };
+    };
 
-  tick();
-  const id = setInterval(tick, 2000);
-  return () => clearInterval(id);
-}, [apiStatus, activeNode, onAlertChange]);
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => clearInterval(id);
+  }, [apiStatus, activeNode, onAlertChange]);
 
   // ── Dérivés ────────────────────────────────────────────────────────────────
   const statusColor = apiStatus === "online" ? "#22c55e" : "#ef4444";
