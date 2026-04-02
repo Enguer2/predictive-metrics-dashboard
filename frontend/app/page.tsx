@@ -16,22 +16,13 @@ export default function Home() {
 
   // ── 1. Vérification & Inactivité de la Session ──
   useEffect(() => {
-    // Vérifie si l'utilisateur a déjà une session active au montage
     const currentSession = sessionStorage.getItem("watchman_session_id");
-    if (currentSession) {
-      setIsSessionActive(true);
-    } else {
-      setIsSessionActive(false);
-    }
+    setIsSessionActive(!!currentSession);
 
     let timeoutId: NodeJS.Timeout;
-
     const resetTimer = () => {
-      // Ne déclenche le timer que si la session est active
       if (!sessionStorage.getItem("watchman_session_id")) return;
-
       clearTimeout(timeoutId);
-      // 15 minutes = 900 000 ms
       timeoutId = setTimeout(() => {
         sessionStorage.removeItem("watchman_session_id");
         setIsSessionActive(false);
@@ -41,15 +32,14 @@ export default function Home() {
     };
 
     const events = ["mousemove", "keydown", "mousedown", "scroll"];
-    events.forEach(event => window.addEventListener(event, resetTimer));
-
+    events.forEach(e => window.addEventListener(e, resetTimer));
     resetTimer();
 
     return () => {
-      events.forEach(event => window.removeEventListener(event, resetTimer));
+      events.forEach(e => window.removeEventListener(e, resetTimer));
       clearTimeout(timeoutId);
     };
-  }, [isSessionActive]);
+  }, []);
 
   // ── Fonction pour lancer une nouvelle session ──
   const handleStartSession = () => {

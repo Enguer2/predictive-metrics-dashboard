@@ -75,10 +75,8 @@ export interface KillswitchResult {
 // ── Internal helper ───────────────────────────────────────────────────────────
 
 export function getSessionId(): string {
-  if (typeof window === "undefined") return "server_render";
-  
-  const sid = sessionStorage.getItem("watchman_session_id");
-  return sid || "anonymous"; 
+  if (typeof window === "undefined") return "anonymous";
+  return sessionStorage.getItem("watchman_session_id") ?? "anonymous";
 }
 
 // Mise à jour du helper interne "get"
