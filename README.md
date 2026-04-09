@@ -3,7 +3,7 @@
 > Un tableau de bord de monitoring intelligent en temps réel, alimenté par un modèle de Machine Learning pour la **détection prédictive d'anomalies** sur des serveurs distribués.
 
 ---
-[Accéder au Dashboard WATCHMAN_OS](https://dashboard-enguer2.duckdns.org/)
+[Accéder au Dashboard WATCHMAN_OS](https://predictive-metrics-dashboard.vercel.app/)
 
 ## 📸 Aperçu de l'application
 
